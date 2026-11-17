@@ -1,0 +1,54 @@
+# ---------- private planning docs (local only) ----------
+*.md
+!README.md
+docs/
+.claude/
+.mcp.json
+*.zip
+
+# ---------- secrets ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------- dependencies ----------
+node_modules/
+.pnpm-store/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# ---------- build output ----------
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# ---------- Vercel / deploy ----------
+.vercel/
+
+# ---------- tests and reports ----------
+coverage/
+playwright-report/
+test-results/
+.playwright-mcp/
+.pytest_cache/
+.vitest-cache/
+
+# ---------- logs and temp ----------
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.cache/
+.tmp/
+
+# ---------- editor ----------
+.idea/
+.vscode/*
+!.vscode/extensions.json
