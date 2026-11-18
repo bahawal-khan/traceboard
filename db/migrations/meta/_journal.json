@@ -29,6 +29,20 @@
       "when": 1795030378674,
       "tag": "0003_rls_control_plane",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795032153228,
+      "tag": "0004_events_support",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795032155308,
+      "tag": "0005_events_partitions_rls",
+      "breakpoints": true
     }
   ]
 }

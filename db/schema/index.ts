@@ -11,3 +11,4 @@ export const appState = pgTable("app_state", {
 });
 
 export * from "./control-plane";
+export * from "./events-support";
