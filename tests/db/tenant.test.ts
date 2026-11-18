@@ -20,8 +20,13 @@ run("tenant context (ctx* + withTenant)", () => {
   const A = mk();
   const B = mk();
 
+  const slot = (owner: string) => sql`select claim_user_slot(${owner}, 100000) as s`;
+  const release = (owner: string) =>
+    sql.transaction((t) => [t`select set_config('app.owner_id', ${owner}, true)`, t`select release_user_slot()`]);
+
   const seed = (x: ReturnType<typeof mk>) =>
     sql.transaction((t) => [
+      t`select claim_user_slot(${x.owner}, 100000)`,
       t`select set_config('app.owner_id', ${x.owner}, true), set_config('app.project_ids', ${x.project}, true)`,
       t`insert into projects (id, owner_id, name) values (${x.project}, ${x.owner}, 'tenant-test')`,
       t`insert into api_keys (project_id, key_hash, prefix) values (${x.project}, ${hashApiKey(x.key)}, 'lm_test')`,
@@ -38,6 +43,7 @@ run("tenant context (ctx* + withTenant)", () => {
       await sql.transaction((t) => [
         t`select set_config('app.owner_id', ${x.owner}, true)`,
         t`delete from projects where id = ${x.project}`,
+        t`select release_user_slot()`,
       ]);
     }
   });
@@ -67,6 +73,7 @@ run("tenant context (ctx* + withTenant)", () => {
       await sql.transaction((t) => [
         t`select set_config('app.owner_id', ${x.owner}, true)`,
         t`delete from projects where id = ${x.project}`,
+        t`select release_user_slot()`,
       ]);
     });
 
@@ -99,11 +106,25 @@ run("tenant context (ctx* + withTenant)", () => {
     });
 
     it("a user with no projects gets an empty scope that fails closed", async () => {
-      mockAuth.mockResolvedValue({ userId: `test_${randomUUID()}` });
+      const userId = `test_${randomUUID()}`;
+      await slot(userId);
+      mockAuth.mockResolvedValue({ userId });
       const ctx = (await ctxFromSession())!;
       expect(ctx.projectIds).toEqual([]);
       const [p, b] = await withTenant(ctx, (t) => [t`select id from projects`, t`select id from budgets`]);
       expect([p.length, b.length]).toEqual([0, 0]);
+      await release(userId);
+    });
+
+    it("returns null for a signed-in user who never claimed a slot, even if they own a project", async () => {
+      const x = { owner: `test_${randomUUID()}`, project: randomUUID() as string };
+      await sql.transaction((t) => [
+        t`select set_config('app.owner_id', ${x.owner}, true), set_config('app.project_ids', ${x.project}, true)`,
+        t`insert into projects (id, owner_id, name) values (${x.project}, ${x.owner}, 'no-slot')`,
+      ]);
+      mockAuth.mockResolvedValue({ userId: x.owner });
+      expect(await ctxFromSession()).toBeNull();
+      await sql.transaction((t) => [t`select set_config('app.owner_id', ${x.owner}, true)`, t`delete from projects where id = ${x.project}`]);
     });
 
     it("never shows user A the projects of user B", async () => {
