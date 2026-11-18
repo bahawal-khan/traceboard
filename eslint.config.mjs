@@ -3,6 +3,12 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
 /** Tenant data access must go through lib/repo + withTenant(). */
+const ctxInternals = {
+  group: ["@/lib/repo/tenant", "**/lib/repo/tenant", "./tenant", "../repo/tenant"],
+  importNames: ["issueCtx", "runScoped"],
+  message: "Only lib/repo/ctx.ts may mint tenant contexts. Use withTenant(ctx, ...) instead.",
+};
+
 export const dbImportBan = {
   paths: [
     { name: "@neondatabase/serverless", message: "Use lib/repo/* (withTenant) instead of the db driver." },
@@ -11,6 +17,7 @@ export const dbImportBan = {
     { name: "pg", message: "Use lib/repo/* (withTenant) instead of the db driver." },
   ],
   patterns: [
+    ctxInternals,
     { group: ["@/lib/db", "@/lib/db/*", "**/lib/db", "**/lib/db/*"], message: "Import the db client only from lib/repo/* (withTenant)." },
   ],
 };
@@ -31,6 +38,12 @@ const eslintConfig = defineConfig([
   {
     files: ["lib/repo/**", "lib/db/**", "db/**", "scripts/**", "drizzle.config.ts", "tests/**"],
     rules: { "no-restricted-imports": "off" },
+  },
+  // Inside lib/repo everything but the two context modules may use withTenant only.
+  {
+    files: ["lib/repo/**"],
+    ignores: ["lib/repo/ctx.ts", "lib/repo/tenant.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: [ctxInternals] }] },
   },
   globalIgnores([".next/**", "out/**", "build/**", "coverage/**", "next-env.d.ts"]),
 ]);

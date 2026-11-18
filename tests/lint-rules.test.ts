@@ -27,4 +27,17 @@ describe("architecture lint rules", () => {
     const rules = await lint('export const A = () => <div dangerouslySetInnerHTML={{ __html: "x" }} />;\n', "app/bad.tsx");
     expect(rules).toContain("no-restricted-syntax");
   });
+
+  it("bans minting tenant contexts outside lib/repo/ctx.ts", async () => {
+    const bad = 'import { issueCtx } from "@/lib/repo/tenant";\nexport const x = issueCtx;\n';
+    expect(await lint(bad, "app/bad.ts")).toContain("no-restricted-imports");
+    const inRepo = 'import { runScoped } from "./tenant";\nexport const x = runScoped;\n';
+    expect(await lint(inRepo, "lib/repo/projects.ts")).toContain("no-restricted-imports");
+    expect(await lint(inRepo, "lib/repo/ctx.ts")).not.toContain("no-restricted-imports");
+  });
+
+  it("allows repo modules to import withTenant", async () => {
+    const ok = 'import { withTenant } from "./tenant";\nexport const x = withTenant;\n';
+    expect(await lint(ok, "lib/repo/projects.ts")).not.toContain("no-restricted-imports");
+  });
 });
