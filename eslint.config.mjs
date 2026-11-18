@@ -29,7 +29,7 @@ const eslintConfig = defineConfig([
   },
   // The only places allowed to touch the db client / driver.
   {
-    files: ["lib/repo/**", "lib/db/**", "db/**", "drizzle.config.ts", "tests/**"],
+    files: ["lib/repo/**", "lib/db/**", "db/**", "scripts/**", "drizzle.config.ts", "tests/**"],
     rules: { "no-restricted-imports": "off" },
   },
   globalIgnores([".next/**", "out/**", "build/**", "coverage/**", "next-env.d.ts"]),
