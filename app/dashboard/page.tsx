@@ -1,11 +1,15 @@
 import { UserButton } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { QUOTAS } from "@/lib/quotas";
+import { ctxFromSession } from "@/lib/repo/ctx";
+import { listProjects } from "@/lib/repo/projects";
+import { ProjectsPanel } from "./projects-panel";
 
 export default async function DashboardPage() {
-  // Defence in depth: the proxy already protects /dashboard.
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  // Defence in depth: the proxy protects /dashboard and the layout claims the user slot.
+  const ctx = await ctxFromSession();
+  if (!ctx) redirect("/sign-in");
+  const projects = await listProjects(ctx);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -13,9 +17,12 @@ export default async function DashboardPage() {
         <span className="font-semibold">TraceBoard</span>
         <UserButton />
       </header>
-      <main className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="max-w-md text-muted-foreground">No projects yet. Projects arrive in a later step.</p>
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+        <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {projects.length} of {QUOTAS.projectsPerUser} projects used on the free plan.
+        </p>
+        <ProjectsPanel initial={projects} limit={QUOTAS.projectsPerUser} />
       </main>
     </div>
   );
