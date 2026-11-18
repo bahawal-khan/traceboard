@@ -6,13 +6,16 @@ import { issueCtx, runScoped, type ApiKeyCtx, type DemoCtx, type SessionCtx } fr
 /** Owner id of the synthetic demo project. Clerk user ids never look like this. */
 export const DEMO_OWNER_ID = "system:demo";
 
-/** Validated Clerk session -> context scoped to the projects this user owns. null if signed out. */
+/** Validated Clerk session -> context scoped to the projects this user owns. null if signed out or the user holds no slot. */
 export async function ctxFromSession(): Promise<SessionCtx | null> {
   const { userId } = await auth();
   if (!userId) return null;
-  const [rows] = await runScoped({ ownerId: userId, projectIds: [], readOnly: false }, (t) => [
+  const [rows, slot] = await runScoped({ ownerId: userId, projectIds: [], readOnly: false }, (t) => [
     t`select id from projects where owner_id = ${userId}`,
+    t`select 1 as ok from app_users`, // RLS: only the caller's own row is visible
   ]);
+  // No slot = never passed the MAX_USERS check on first dashboard load: no data access.
+  if (slot.length === 0) return null;
   return issueCtx<SessionCtx>({
     kind: "session",
     ownerId: userId,
