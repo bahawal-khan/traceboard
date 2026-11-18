@@ -9,3 +9,5 @@ export const appState = pgTable("app_state", {
   value: jsonb("value").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export * from "./control-plane";
