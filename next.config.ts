@@ -12,6 +12,8 @@ export default function config(phase: string): NextConfig {
   return {
     poweredByHeader: false,
     reactStrictMode: true,
+    // Privacy-first: no telemetry from Clerk (it is also blocked by our connect-src).
+    env: { NEXT_PUBLIC_CLERK_TELEMETRY_DISABLED: "1" },
     // CSP (per-request nonce) and the request id are set in proxy.ts.
     async headers() {
       return [

@@ -11,6 +11,7 @@ export interface CspOptions {
   extraConnectSrc?: readonly string[];
   extraImgSrc?: readonly string[];
   extraFrameSrc?: readonly string[];
+  workerSrc?: readonly string[];
 }
 
 export function buildCsp(o: CspOptions): string {
@@ -24,13 +25,15 @@ export function buildCsp(o: CspOptions): string {
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     "script-src": script,
-    "style-src": ["'self'", `'nonce-${o.nonce}'`],
-    // React/Recharts set style="" attributes; attributes cannot run script.
-    "style-src-attr": ["'unsafe-inline'"],
+    // Clerk injects <style> elements at runtime (CSS-in-JS) without a nonce, and
+    // a nonce would disable 'unsafe-inline'. Accepted trade-off: styles cannot
+    // run script; scripts stay nonce-only. Revisit if Clerk supports style nonces.
+    "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "blob:", "data:", ...(o.extraImgSrc ?? [])],
     "font-src": ["'self'"],
     "connect-src": ["'self'", ...(o.extraConnectSrc ?? [])],
     "frame-src": o.extraFrameSrc?.length ? [...o.extraFrameSrc] : ["'none'"],
+    ...(o.workerSrc?.length ? { "worker-src": [...o.workerSrc] } : {}),
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],

@@ -28,10 +28,12 @@ describe("buildCsp", () => {
     expect(prod).toContain("upgrade-insecure-requests");
   });
 
-  it("only widens style attributes, not style elements", () => {
-    expect(prod).toContain("style-src-attr 'unsafe-inline'");
+  it("allows inline styles (Clerk CSS-in-JS) but never inline scripts", () => {
     const style = prod.split("; ").find((d) => d.startsWith("style-src "))!;
-    expect(style).not.toContain("unsafe-inline");
+    expect(style).toContain("'unsafe-inline'");
+    expect(style).not.toContain("nonce-"); // a nonce would silently disable unsafe-inline
+    const script = prod.split("; ").find((d) => d.startsWith("script-src "))!;
+    expect(script).not.toContain("unsafe-inline");
   });
 });
 
