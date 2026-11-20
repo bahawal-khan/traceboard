@@ -6,9 +6,33 @@ import type { ApiKeyCtx } from "@/lib/repo/tenant";
  * an `EventStore`, so a later columnar or queued backend replaces one module. The project is taken
  * from the authenticated context, never from the rows.
  */
+/** Today's (UTC) counters for the project, after this write. `requests` counts ingest requests. */
+export interface UsageToday {
+  events: number;
+  requests: number;
+  costMicro: number;
+}
+
+/** A budget touched by this write: its config plus the cumulative spend for the affected period. */
+export interface BudgetUsageRow {
+  budgetId: string;
+  scope: "project" | "trace";
+  period: "day" | "month" | "run";
+  /** numeric(…) as text; the Guard compares it in integer micro-USD. */
+  limitUsd: string;
+  action: "alert" | "block";
+  /** '2026-11-20' (day), '2026-11' (month) or the trace id (per-run budgets). */
+  periodKey: string;
+  spentMicro: number;
+}
+
 export interface PersistResult {
   /** Rows actually inserted; the batch size minus this is the number of duplicates skipped. */
   inserted: number;
+  /** null only for an empty batch, which does not touch the database. */
+  usage: UsageToday | null;
+  /** Budgets whose spend changed in this write; empty for a batch of duplicates or zero cost. */
+  budgets: BudgetUsageRow[];
 }
 
 export interface EventStore {

@@ -67,7 +67,7 @@ run("PgEventStore (database)", () => {
       status: "error", error: "boom", promptHash: "a".repeat(64), argsHash: "b".repeat(64), userIdHash: "c".repeat(64), tags: ["x", "y"],
     });
     const plain = ev();
-    expect(await store.persist(a.ctx, [e, plain])).toEqual({ inserted: 2 });
+    expect((await store.persist(a.ctx, [e, plain])).inserted).toBe(2);
     const [, rows] = await raw(a.owner, [a.project], (t) => [t`select * from events where event_id = ${e.eventId}`]);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -83,8 +83,8 @@ run("PgEventStore (database)", () => {
   it("a duplicate batch inserts once", async () => {
     const a = await tenant();
     const batch = [ev(), ev(), ev()];
-    expect(await store.persist(a.ctx, batch)).toEqual({ inserted: 3 });
-    expect(await store.persist(a.ctx, batch)).toEqual({ inserted: 0 });
+    expect((await store.persist(a.ctx, batch)).inserted).toBe(3);
+    expect((await store.persist(a.ctx, batch)).inserted).toBe(0);
     expect(await count(a)).toBe(3);
   });
 
@@ -92,14 +92,14 @@ run("PgEventStore (database)", () => {
     const a = await tenant();
     const old = [ev(), ev()];
     await store.persist(a.ctx, old);
-    expect(await store.persist(a.ctx, [old[0]!, ev(), old[1]!, ev()])).toEqual({ inserted: 2 });
+    expect((await store.persist(a.ctx, [old[0]!, ev(), old[1]!, ev()])).inserted).toBe(2);
     expect(await count(a)).toBe(4);
   });
 
   it("the same event twice inside ONE batch inserts once and does not error", async () => {
     const a = await tenant();
     const e = ev();
-    expect(await store.persist(a.ctx, [e, e, { ...e }])).toEqual({ inserted: 1 });
+    expect((await store.persist(a.ctx, [e, e, { ...e }])).inserted).toBe(1);
     expect(await count(a)).toBe(1);
   });
 
@@ -114,8 +114,8 @@ run("PgEventStore (database)", () => {
     const a = await tenant();
     const b = await tenant();
     const shared = ev();
-    expect(await store.persist(a.ctx, [shared])).toEqual({ inserted: 1 });
-    expect(await store.persist(b.ctx, [shared])).toEqual({ inserted: 1 }); // A's row does not make B's a "duplicate"
+    expect((await store.persist(a.ctx, [shared])).inserted).toBe(1);
+    expect((await store.persist(b.ctx, [shared])).inserted).toBe(1); // A's row does not make B's a "duplicate"
     expect(await count(a)).toBe(1);
     expect(await count(b)).toBe(1);
     const [, seenByA] = await raw(a.owner, [a.project], (t) => [t`select distinct project_id from events`]);
@@ -148,7 +148,7 @@ run("PgEventStore (database)", () => {
   it("accepts a full 100-event batch in one call", async () => {
     const a = await tenant();
     const batch = Array.from({ length: 100 }, (_, i) => ev({ occurredAt: new Date(base + i), name: `n${i}` }));
-    expect(await store.persist(a.ctx, batch)).toEqual({ inserted: 100 });
+    expect((await store.persist(a.ctx, batch)).inserted).toBe(100);
     expect(await count(a)).toBe(100);
   });
 });

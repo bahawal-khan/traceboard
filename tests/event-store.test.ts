@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ transaction: vi.fn() }));
 vi.mock("@/lib/db/client", () => ({ getSql: () => ({ transaction: mocks.transaction }) }));
 
-import { PgEventStore } from "@/lib/events/pg-store";
+import { isRetryableTxError, PgEventStore } from "@/lib/events/pg-store";
 import { isMissingPartitionError, MissingPartitionError } from "@/lib/events/store";
 import type { NormalizedEvent } from "@/lib/ingest/normalize";
 import { issueCtx, TenantError, type ApiKeyCtx } from "@/lib/repo/tenant";
@@ -23,6 +23,12 @@ const ev = (o: Partial<NormalizedEvent> = {}): NormalizedEvent => ({
   ...o,
 });
 
+const RESULT = {
+  inserted: 3,
+  usage: { events: 10, requests: 2, cost_micro: 500 },
+  budgets: [{ budget_id: "44444444-4444-4444-8444-444444444444", scope: "project", period: "day", limit_usd: "5", action: "block", period_key: "2026-11-20", spent_micro: 123456 }],
+};
+
 type Stmt = { text: string; values: unknown[] };
 let seen: Stmt[];
 beforeEach(() => {
@@ -31,14 +37,18 @@ beforeEach(() => {
   mocks.transaction.mockImplementation(async (build: (t: (s: TemplateStringsArray, ...v: unknown[]) => Stmt) => Stmt[]) => {
     const t = (s: TemplateStringsArray, ...values: unknown[]) => ({ text: s.join("?"), values });
     seen = build(t);
-    return seen.map((_, i) => (i === 0 ? [] : [{ inserted: 3 }]));
+    return seen.map((_, i) => (i === 0 ? [] : [RESULT]));
   });
 });
 
 describe("PgEventStore (statement shape; no database)", () => {
   it("runs one static statement under the key's own project scope and returns the inserted count", async () => {
     const r = await new PgEventStore().persist(ctx(), [ev(), ev({ eventId: "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e1f41" })]);
-    expect(r).toEqual({ inserted: 3 });
+    expect(r).toEqual({
+      inserted: 3,
+      usage: { events: 10, requests: 2, costMicro: 500 },
+      budgets: [{ budgetId: "44444444-4444-4444-8444-444444444444", scope: "project", period: "day", limitUsd: "5", action: "block", periodKey: "2026-11-20", spentMicro: 123456 }],
+    });
     expect(mocks.transaction).toHaveBeenCalledTimes(1); // one round trip
     expect(seen).toHaveLength(2); // set_config + the insert
     expect(seen[0]!.values).toContain(PID);
@@ -66,7 +76,7 @@ describe("PgEventStore (statement shape; no database)", () => {
   });
 
   it("does not touch the database for an empty batch", async () => {
-    expect(await new PgEventStore().persist(ctx(), [])).toEqual({ inserted: 0 });
+    expect(await new PgEventStore().persist(ctx(), [])).toEqual({ inserted: 0, usage: null, budgets: [] });
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
@@ -74,6 +84,28 @@ describe("PgEventStore (statement shape; no database)", () => {
     await expect(new PgEventStore().persist(ctx(["eval"]), [ev()])).rejects.toBeInstanceOf(TenantError);
     await expect(new PgEventStore().persist(ctx(["ingest"], [PID, OTHER]), [ev()])).rejects.toBeInstanceOf(TenantError);
     await expect(new PgEventStore().persist(ctx(["ingest"], []), [ev()])).rejects.toBeInstanceOf(TenantError);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("computes every rollup from the insert's RETURNING rows (`ins`), never from the request batch", async () => {
+    await new PgEventStore().persist(ctx(), [ev()]);
+    const text = seen[1]!.text;
+    // The only place rows are read from the request payload is the insert itself.
+    expect(text.match(/jsonb_to_recordset/g)).toHaveLength(1);
+    expect(text).toMatch(/returning occurred_at, trace_id, model, status/);
+    expect(text).toMatch(/from ins\s*\)/); // ev is built from ins
+    for (const cte of ["metrics_minute", "metrics_hourly"]) expect(text).toContain(`insert into ${cte}`);
+    expect(text).toContain("insert into usage_daily");
+    expect(text).toContain("insert into budget_usage");
+  });
+
+  it("passes the latency bounds and a valid shard as parameters; rejects an out-of-range shard before the database", async () => {
+    await new PgEventStore({ pickShard: () => 5 }).persist(ctx(), [ev()]);
+    const values = seen[1]!.values;
+    expect(values).toContainEqual([50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600, 51200]);
+    expect(values).toContain(5);
+    mocks.transaction.mockClear();
+    for (const bad of [-1, 8, 1.5, NaN]) await expect(new PgEventStore({ pickShard: () => bad }).persist(ctx(), [ev()])).rejects.toThrow(/shard/);
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
@@ -93,5 +125,104 @@ describe("isMissingPartitionError", () => {
     expect(isMissingPartitionError(Object.assign(new Error("new row violates check constraint"), { code: "23514" }))).toBe(false);
     expect(isMissingPartitionError(Object.assign(new Error("no partition of relation"), { code: "42501" }))).toBe(false);
     for (const v of [null, undefined, "no partition of relation", 5, {}]) expect(isMissingPartitionError(v)).toBe(false);
+  });
+});
+
+describe("deadlock / serialization retry", () => {
+  const dbErr = (code: string, message = "boom") => Object.assign(new NeonDbError(message), { code });
+  const okRows = (build: (t: (s: TemplateStringsArray, ...v: unknown[]) => Stmt) => Stmt[]) => {
+    const t = (s: TemplateStringsArray, ...values: unknown[]) => ({ text: s.join("?"), values });
+    return build(t).map((_, i) => (i === 0 ? [] : [RESULT]));
+  };
+  const store = (sleep = vi.fn(async () => {})) => ({ sleep, store: new PgEventStore({ sleep, retryDelayMs: () => 77 }) });
+
+  it("recognises only SQLSTATE 40P01 and 40001", () => {
+    expect(isRetryableTxError(dbErr("40P01"))).toBe(true);
+    expect(isRetryableTxError(dbErr("40001"))).toBe(true);
+    for (const c of ["23505", "23514", "42501", "57014", "40002", "08006"]) expect(isRetryableTxError(dbErr(c)), c).toBe(false);
+    for (const v of [null, undefined, "40P01", 40001, new Error("deadlock detected"), {}]) expect(isRetryableTxError(v)).toBe(false);
+  });
+
+  it.each(["40P01", "40001"])("retries once on %s and returns the second result", async (code) => {
+    mocks.transaction.mockReset();
+    mocks.transaction.mockRejectedValueOnce(dbErr(code, "deadlock detected")).mockImplementationOnce(async (b) => okRows(b));
+    const { store: s, sleep } = store();
+    const r = await s.persist(ctx(), [ev()]);
+    expect(r.inserted).toBe(3);
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(77);
+  });
+
+  it("the retry sends the identical statement and parameters (the rolled-back attempt left nothing behind)", async () => {
+    const calls: Stmt[][] = [];
+    mocks.transaction.mockReset();
+    mocks.transaction.mockImplementation(async (b: (t: (s: TemplateStringsArray, ...v: unknown[]) => Stmt) => Stmt[]) => {
+      const t = (s: TemplateStringsArray, ...values: unknown[]) => ({ text: s.join("?"), values });
+      calls.push(b(t));
+      if (calls.length === 1) throw dbErr("40P01");
+      return calls[1]!.map((_, i) => (i === 0 ? [] : [RESULT]));
+    });
+    await new PgEventStore({ sleep: async () => {}, pickShard: () => 4 }).persist(ctx(), [ev()]);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual(calls[0]);
+  });
+
+  it("waits 50 to 150 ms by default", async () => {
+    const waits: number[] = [];
+    const rnd = vi.spyOn(Math, "random");
+    try {
+      for (const r of [0, 0.5, 0.999999]) {
+        rnd.mockReturnValue(r);
+        mocks.transaction.mockReset();
+        mocks.transaction.mockRejectedValueOnce(dbErr("40P01")).mockImplementationOnce(async (b) => okRows(b));
+        await new PgEventStore({ sleep: async (ms) => void waits.push(ms), pickShard: () => 0 }).persist(ctx(), [ev()]);
+      }
+    } finally {
+      rnd.mockRestore();
+    }
+    expect(waits[0]).toBe(50);
+    expect(waits[1]).toBe(100);
+    expect(waits[2]).toBeGreaterThan(149.9);
+    expect(waits.every((w) => w >= 50 && w < 150)).toBe(true);
+  });
+
+  it("does not retry a constraint, permission or partition error", async () => {
+    for (const code of ["23505", "42501", "23514", "22P02"]) {
+      mocks.transaction.mockReset();
+      const e = dbErr(code, code === "23514" ? 'no partition of relation "events" found for row' : "nope");
+      mocks.transaction.mockRejectedValue(e);
+      const { store: s, sleep } = store();
+      const rejected = await s.persist(ctx(), [ev()]).catch((x) => x);
+      expect(mocks.transaction, code).toHaveBeenCalledTimes(1);
+      expect(sleep, code).not.toHaveBeenCalled();
+      if (code === "23514") expect(rejected).toBeInstanceOf(MissingPartitionError);
+      else expect(rejected).toBe(e); // surfaced unchanged
+    }
+  });
+
+  it("surfaces the second failure unchanged and does not retry a third time", async () => {
+    const first = dbErr("40P01", "first");
+    const second = dbErr("40P01", "second");
+    mocks.transaction.mockReset();
+    mocks.transaction.mockRejectedValueOnce(first).mockRejectedValueOnce(second).mockRejectedValue(new Error("never"));
+    const { store: s, sleep } = store();
+    await expect(s.persist(ctx(), [ev()])).rejects.toBe(second);
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("a retry that then hits a missing partition is mapped like any other", async () => {
+    mocks.transaction.mockReset();
+    mocks.transaction
+      .mockRejectedValueOnce(dbErr("40001"))
+      .mockRejectedValueOnce(dbErr("23514", 'no partition of relation "events" found for row'));
+    await expect(store().store.persist(ctx(), [ev()])).rejects.toBeInstanceOf(MissingPartitionError);
+  });
+
+  it("does not retry the scope and context checks that run before the database", async () => {
+    mocks.transaction.mockReset();
+    await expect(store().store.persist(ctx(["eval"]), [ev()])).rejects.toBeInstanceOf(TenantError);
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 });
