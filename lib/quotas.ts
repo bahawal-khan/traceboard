@@ -24,6 +24,32 @@ export const RETENTION = {
   minuteRollupsHours: 48,
 } as const;
 
+/**
+ * Per-instance request guards (lib/ratelimit.ts) and the API-key auth cache (lib/api-key-auth.ts).
+ * Serverless instances do not share memory: these are burst limits, not exact global ones.
+ * The IP limiter runs BEFORE any database lookup, so key guessing cannot reach Neon at full speed.
+ */
+export const RATE_LIMITS = {
+  ipBurst: 120,
+  ipRefillPerSec: 30,
+  /**
+   * Second, stricter per-IP budget spent ONLY by failed authentications (unknown, revoked or
+   * wrong-scope key). Checked before the database lookup; successes never spend it. Stops an
+   * attacker who sends a fresh random well-formed key each time (those miss the negative cache).
+   */
+  ipFailureBurst: 10,
+  ipFailureRefillPerSec: 1,
+  keyBurst: 20,
+  keyRefillPerSec: 5,
+  /** Positive cache: also the upper bound on how long a revoked key keeps working on one instance. */
+  authCacheTtlMs: 60_000,
+  /** Unknown/revoked key hashes: short, so a freshly created key is not locked out for long. */
+  authNegativeTtlMs: 30_000,
+  authCacheMaxEntries: 1_000,
+  /** api_keys.last_used_at is written at most this often per key. */
+  lastUsedWriteIntervalMs: 60_000,
+} as const;
+
 /** Database-size guard thresholds as a fraction of the 1 GB Neon Free cap. */
 export const STORAGE_GUARD = { warnAt: 0.7, pauseSignupsAt: 0.85 } as const;
 
