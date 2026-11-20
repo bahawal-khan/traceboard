@@ -1,0 +1,972 @@
+{
+  "cases": [
+    {
+      "name": "empty",
+      "input": "",
+      "expected": "",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "clean text",
+      "input": "Summarise the quarterly report in three bullets.",
+      "expected": "Summarise the quarterly report in three bullets.",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "one email",
+      "input": "mail me at jane.doe+x@example.co.uk today",
+      "expected": "mail me at [redacted:email] today",
+      "report": {
+        "secret": 0,
+        "email": 1,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "two emails",
+      "input": "a@b.io and bob@corp.example.com",
+      "expected": "[redacted:email] and [redacted:email]",
+      "report": {
+        "secret": 0,
+        "email": 2,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "email next to CJK text",
+      "input": "\u9023\u7d61\u5148user@example.com\u3067\u3059",
+      "expected": "\u9023\u7d61\u5148[redacted:email]\u3067\u3059",
+      "report": {
+        "secret": 0,
+        "email": 1,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "not an email",
+      "input": "user@localhost and @handle and a@b",
+      "expected": "user@localhost and @handle and a@b",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "lm key",
+      "input": "key lm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA end",
+      "expected": "key [redacted:secret] end",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "lm key glued to a word",
+      "input": "token:lm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA and xlm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": "token:[redacted:secret] and x[redacted:secret]",
+      "report": {
+        "secret": 2,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "sk key",
+      "input": "use sk-proj-abcdefghijklmnopqrstuvwxyz0123456789 now",
+      "expected": "use [redacted:secret] now",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "sk live key",
+      "input": "sk_live_abcdefghijklmnop1234",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "the word risk is not a key",
+      "input": "risk-management-and-governance-policy",
+      "expected": "risk-management-and-governance-policy",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "bearer token",
+      "input": "Authorization: Bearer abcdefghijklmnopqrstuvwxyz.0123456789",
+      "expected": "Authorization: [redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "bearer lowercase and nbsp",
+      "input": "bearer\u00a0abcdefghijklmnopqrstuvwx",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "short bearer stays",
+      "input": "Bearer abc",
+      "expected": "Bearer abc",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "aws key",
+      "input": "AKIAABCDEFGHIJKLMNOP is the id",
+      "expected": "[redacted:secret] is the id",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "aws key after a non-ascii letter",
+      "input": "\u00e9AKIAABCDEFGHIJKLMNOP",
+      "expected": "\u00e9[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "aws key glued to an ascii letter stays",
+      "input": "xAKIAABCDEFGHIJKLMNOP",
+      "expected": "xAKIAABCDEFGHIJKLMNOP",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "github token",
+      "input": "ghp_a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "slack token",
+      "input": "xoxb-1234567890-abcdefghij",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "jwt",
+      "input": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "postgres url",
+      "input": "DATABASE_URL=postgres://user:pw@host.neon.tech/db?sslmode=require done",
+      "expected": "DATABASE_URL=[redacted:secret] done",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "mixed case redis url",
+      "input": "REDIS://default:secret@cache.internal:6379",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "private key block",
+      "input": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkq\n-----END PRIVATE KEY-----\nafter",
+      "expected": "[redacted:secret]\nafter",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "private key block without an end",
+      "input": "x -----BEGIN RSA PRIVATE KEY-----\nMIIEvQIBADANBgkq\nmore",
+      "expected": "x [redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "card with spaces",
+      "input": "pay 4111 1111 1111 1111 now",
+      "expected": "pay [redacted:card] now",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 1,
+        "phone": 0
+      }
+    },
+    {
+      "name": "card with dashes and a dot",
+      "input": "card 5500-0000-0000-0004.",
+      "expected": "card [redacted:card].",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 1,
+        "phone": 0
+      }
+    },
+    {
+      "name": "card that fails Luhn",
+      "input": "order 1234 5678 9012 3456 ok",
+      "expected": "order 1234 5678 9012 3456 ok",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "card with non-breaking spaces is not a card",
+      "input": "4111\u00a01111\u00a01111\u00a01111",
+      "expected": "4111\u00a01111\u00a01111\u00a01111",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "phone international",
+      "input": "call +92 300 1234567 please",
+      "expected": "call [redacted:phone] please",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "phone with parentheses",
+      "input": "(555) 123-4567",
+      "expected": "[redacted:phone]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "phone with non-breaking spaces",
+      "input": "+44\u00a020\u00a07946\u00a00958",
+      "expected": "[redacted:phone]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "date and time stay",
+      "input": "on 2026-11-20 at 12:30",
+      "expected": "on 2026-11-20 at 12:30",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "short ip and version stay",
+      "input": "ip 10.0.0.1 and v1.2.3.4567 total 12345 id 20261120",
+      "expected": "ip 10.0.0.1 and v1.2.3.4567 total 12345 id 20261120",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "long dotted ip is phone-like",
+      "input": "from 192.168.100.200 today",
+      "expected": "from [redacted:phone] today",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "digits glued to letters stay",
+      "input": "abc123456789def",
+      "expected": "abc123456789def",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "all kinds at once",
+      "input": "key lm_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA mail a@b.co card 4111111111111111 tel +1 415 555 2671",
+      "expected": "key [redacted:secret] mail [redacted:email] card [redacted:card] tel [redacted:phone]",
+      "report": {
+        "secret": 1,
+        "email": 1,
+        "card": 1,
+        "phone": 1
+      }
+    },
+    {
+      "name": "already redacted text is unchanged",
+      "input": "mail [redacted:email] key [redacted:secret]",
+      "expected": "mail [redacted:email] key [redacted:secret]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "multiline",
+      "input": "line one a@b.co\nline two +1 415 555 2671\r\nline three",
+      "expected": "line one [redacted:email]\nline two [redacted:phone]\r\nline three",
+      "report": {
+        "secret": 0,
+        "email": 1,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "emoji around",
+      "input": "\ud83d\ude00 jane@example.com \ud83d\ude00",
+      "expected": "\ud83d\ude00 [redacted:email] \ud83d\ude00",
+      "report": {
+        "secret": 0,
+        "email": 1,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "email with hyphen underscore percent plus",
+      "input": "jane-doe_x%y+z@sub-domain.example.com.",
+      "expected": "[redacted:email].",
+      "report": {
+        "secret": 0,
+        "email": 1,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "email with digits and uppercase",
+      "input": "JOHN.SMITH42@EXAMPLE.ORG",
+      "expected": "[redacted:email]",
+      "report": {
+        "secret": 0,
+        "email": 1,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "email tld of one letter is not an email",
+      "input": "a@b.c",
+      "expected": "a@b.c",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "email with a long tld",
+      "input": "x@y.museum",
+      "expected": "[redacted:email]",
+      "report": {
+        "secret": 0,
+        "email": 1,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "email in angle brackets and quotes",
+      "input": "<jane@example.com> \"bob@example.net\"",
+      "expected": "<[redacted:email]> \"[redacted:email]\"",
+      "report": {
+        "secret": 0,
+        "email": 2,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "email glued to digits",
+      "input": "123jane@example.com456",
+      "expected": "[redacted:email]456",
+      "report": {
+        "secret": 0,
+        "email": 1,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "lm key of 15 characters stays",
+      "input": "lm_AAAAAAAAAAAAAAA",
+      "expected": "lm_AAAAAAAAAAAAAAA",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "lm key of 16 characters goes",
+      "input": "lm_AAAAAAAAAAAAAAAA",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "sk key of 15 characters stays",
+      "input": "sk-aaaaaaaaaaaaaaa",
+      "expected": "sk-aaaaaaaaaaaaaaa",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "sk key of 16 characters goes",
+      "input": "sk-aaaaaaaaaaaaaaaa",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "pk and rk keys",
+      "input": "pk_test_bbbbbbbbbbbbbbbbbbbb rk-ant-cccccccccccccccccccc",
+      "expected": "[redacted:secret] [redacted:secret]",
+      "report": {
+        "secret": 2,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "sk key with a trailing dot",
+      "input": "key sk-aaaaaaaaaaaaaaaaaaaa.",
+      "expected": "key [redacted:secret].",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "bearer of 15 characters stays",
+      "input": "Bearer AAAAAAAAAAAAAAA",
+      "expected": "Bearer AAAAAAAAAAAAAAA",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "bearer of 16 characters goes",
+      "input": "Bearer AAAAAAAAAAAAAAAA",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "bearer token with symbols",
+      "input": "Bearer abc.def~ghi+jkl/mno=pqr-stu",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "aws key too short",
+      "input": "AKIAAAAAAAAAAAAAAAA",
+      "expected": "AKIAAAAAAAAAAAAAAAA",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "aws key lowercase stays",
+      "input": "akiaaaaaaaaaaaaaaaaa",
+      "expected": "akiaaaaaaaaaaaaaaaaa",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "aws key followed by a letter stays",
+      "input": "AKIAAAAAAAAAAAAAAAAAZ",
+      "expected": "AKIAAAAAAAAAAAAAAAAAZ",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "github token of 29 characters stays",
+      "input": "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "github token of 30 characters goes",
+      "input": "ghs_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "slack token of 9 characters stays",
+      "input": "xoxb-111111111",
+      "expected": "xoxb-111111111",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "slack token of 10 characters goes",
+      "input": "xoxp-1111111111",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "jwt with a short segment stays",
+      "input": "eyJaaaa.bbbbbbbb.cccccccc",
+      "expected": "eyJaaaa.bbbbbbbb.cccccccc",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "jwt with eight-character segments goes",
+      "input": "eyJaaaaa.bbbbbbbb.cccccccc",
+      "expected": "eyJaaaaa.bbbbbbbb.cccccccc",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "postgresql and mongodb urls",
+      "input": "postgresql://u:p@h/db mongodb+srv://u:p@cluster.example.net/x mysql://u@h/db",
+      "expected": "[redacted:secret] [redacted:secret] [redacted:secret]",
+      "report": {
+        "secret": 3,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "url inside quotes stops at the quote",
+      "input": "'postgres://u:p@h/db' and \"redis://h:6379\"",
+      "expected": "'[redacted:secret]' and \"[redacted:secret]\"",
+      "report": {
+        "secret": 2,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "ec and openssh private keys",
+      "input": "-----BEGIN EC PRIVATE KEY-----\nabc\n-----END EC PRIVATE KEY-----",
+      "expected": "[redacted:secret]",
+      "report": {
+        "secret": 1,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "two private key blocks",
+      "input": "-----BEGIN PRIVATE KEY-----a-----END PRIVATE KEY----- mid -----BEGIN PRIVATE KEY-----b-----END PRIVATE KEY-----",
+      "expected": "[redacted:secret] mid [redacted:secret]",
+      "report": {
+        "secret": 2,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "card of 13 digits",
+      "input": "4222222222222",
+      "expected": "[redacted:card]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 1,
+        "phone": 0
+      }
+    },
+    {
+      "name": "card of 19 digits",
+      "input": "6011000990139424000",
+      "expected": "6011000990139424000",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "card of 20 digits stays a number",
+      "input": "42424242424242424242",
+      "expected": "42424242424242424242",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "card of 12 digits is not a card",
+      "input": "424242424242",
+      "expected": "[redacted:phone]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "card inside a longer number",
+      "input": "x4111111111111111y",
+      "expected": "x4111111111111111y",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "card then a dash then more",
+      "input": "4111111111111111-5",
+      "expected": "4111111111111111-5",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "amex 15 digits with spaces",
+      "input": "3782 822463 10005",
+      "expected": "[redacted:card]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 1,
+        "phone": 0
+      }
+    },
+    {
+      "name": "phone of 8 digits stays",
+      "input": "1234 5678",
+      "expected": "1234 5678",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "phone of 9 digits goes",
+      "input": "123 456 789",
+      "expected": "[redacted:phone]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "phone of 15 digits goes",
+      "input": "+1 234 567 890 123 45",
+      "expected": "[redacted:phone]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "phone of 16 digits stays",
+      "input": "1234 5678 9012 3456 7",
+      "expected": "1234 5678 9012 3456 7",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "phone starting with a plus",
+      "input": "+4915123456789",
+      "expected": "[redacted:phone]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "phone starting with a parenthesis",
+      "input": "(030) 1234567",
+      "expected": "[redacted:phone]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "phone glued to letters stays",
+      "input": "id:+123456789x",
+      "expected": "id:+123456789x",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "phone after a hyphen stays",
+      "input": "ref-123456789",
+      "expected": "ref-123456789",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "phone after a dot stays",
+      "input": "v.123456789",
+      "expected": "v.123456789",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "phone ending with a hyphen stays",
+      "input": "123456789-",
+      "expected": "123456789-",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    },
+    {
+      "name": "two phones",
+      "input": "+44 20 7946 0958 or +1 415 555 2671",
+      "expected": "[redacted:phone] or [redacted:phone]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 2
+      }
+    },
+    {
+      "name": "sentence with every punctuation",
+      "input": "Call (415) 555-2671, or mail a@b.co; key sk-zzzzzzzzzzzzzzzzzzzz!",
+      "expected": "Call [redacted:phone], or mail [redacted:email]; key [redacted:secret]!",
+      "report": {
+        "secret": 1,
+        "email": 1,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "tabs and newlines inside a phone",
+      "input": "415\t555\n2671 9",
+      "expected": "[redacted:phone]",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 1
+      }
+    },
+    {
+      "name": "unicode digits are not digits",
+      "input": "\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669",
+      "expected": "\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669",
+      "report": {
+        "secret": 0,
+        "email": 0,
+        "card": 0,
+        "phone": 0
+      }
+    }
+  ]
+}

@@ -5,9 +5,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from llm_monitor._events import build_event
+from llm_monitor._redact import make_redactor
 
 NOW = datetime(2026, 11, 20, 12, 0, 0, 123456, tzinfo=timezone.utc)
 HASH = "0123456789abcdef" * 4
+KEY43 = "A" * 43
 EMOJI = "\U0001F600"
 
 
@@ -41,6 +43,13 @@ def cases():
         {"content": {"input": "é" * 3000, "output": EMOJI * 1000}},
         {"content": {"input": "\ud800 lone", "output": "x", "other": "dropped"}},
         {"content": "not a dict"},
+        {"prompt": "  Summarise   this\n\ndocument ", "args": {"b": 1, "a": [1, 2]}, "user_id": "user-42"},
+        {"prompt": [{"role": "user", "content": "hi"}], "user_id": 42},
+        {"prompt": object(), "args": {1, 2}, "user_id": True},
+        {"prompt": "p", "prompt_hash": HASH},
+        {"status": "error", "error": "User jane@example.com not found; token lm_" + KEY43 + "\n  at line 3"},
+        {"content": {"input": "mail jane@example.com card 4111 1111 1111 1111", "output": "call +92 300 1234567"}},
+        {"content": {"input": "a" * 2030 + " lm_" + KEY43}},
     ]
 
 
@@ -50,7 +59,8 @@ def build_all():
         fields = dict(fields)
         fixed = str(uuid.UUID(int=(0x3F0C1B2E8A644D1F9C7E5B2A6D9E0000 + i), version=4))
         fields.setdefault("event_id", fixed)
-        event, _ = build_event(fields, capture_content=True, now=NOW)
+        # What the SDK really sends by default: built-in local redaction on, hashing with a fixed test salt.
+        event, _ = build_event(fields, capture_content=True, now=NOW, redactor=make_redactor(None, True), hash_salt=b"contract-test-salt")
         if str(fields["event_id"]).lower() != event["event_id"]:
             event["event_id"] = fixed  # the SDK replaced an invalid id with a random uuid4: pin it so the fixture is stable
         out.append(event)

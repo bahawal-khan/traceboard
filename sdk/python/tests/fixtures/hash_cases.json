@@ -1,0 +1,145 @@
+{
+  "json": [
+    {
+      "canonical": "{}",
+      "name": "empty object",
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "value": {}
+    },
+    {
+      "canonical": "{\"a\":2,\"b\":1}",
+      "name": "keys are sorted",
+      "sha256": "d3626ac30a87e6f7a6428233b3c68299976865fa5508e4267c5415c76af7a772",
+      "value": {
+        "a": 2,
+        "b": 1
+      }
+    },
+    {
+      "canonical": "{\"a\":\"s\",\"z\":[3,{\"x\":true,\"y\":null}]}",
+      "name": "nested and ordered",
+      "sha256": "0c77cd2ea9d13f0318f50c089a91dde66c67ec7646673981ae9d83b78a76212a",
+      "value": {
+        "a": "s",
+        "z": [
+          3,
+          {
+            "x": true,
+            "y": null
+          }
+        ]
+      }
+    },
+    {
+      "canonical": "{\"k\":\"\u00e9\u65e5\"}",
+      "name": "unicode is not escaped",
+      "sha256": "ff8502faae05bc7f2c9f35e7d6f6f81d4198f273453111b4ade03837a1415434",
+      "value": {
+        "k": "\u00e9\u65e5"
+      }
+    },
+    {
+      "canonical": "[{\"content\":\"hi\",\"role\":\"user\"}]",
+      "name": "chat messages",
+      "sha256": "4e79873118cd9be7a1f0308b9cd772950c5410c74ca3fe1ba2626cba009a9237",
+      "value": [
+        {
+          "content": "hi",
+          "role": "user"
+        }
+      ]
+    },
+    {
+      "canonical": "[1,-2,0]",
+      "name": "integers",
+      "sha256": "088c229bf318d99e080e3d1217b8b3d946c237107946395dee3b8acd340ce80d",
+      "value": [
+        1,
+        -2,
+        0
+      ]
+    },
+    {
+      "canonical": "{\"a\":\"x  y\"}",
+      "name": "strings keep their whitespace",
+      "sha256": "18605886734393acc2b2af455613d53509816aad0682a87a27472ddc0427daec",
+      "value": {
+        "a": "x  y"
+      }
+    }
+  ],
+  "text": [
+    {
+      "input": "",
+      "name": "empty",
+      "normalized": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "input": "abc",
+      "name": "plain",
+      "normalized": "abc",
+      "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    },
+    {
+      "input": "  hello world \n",
+      "name": "outer whitespace",
+      "normalized": "hello world",
+      "sha256": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+    },
+    {
+      "input": "a  b\t\tc\n\nd\r\ne\ff\u000bg",
+      "name": "inner runs",
+      "normalized": "a b c d e f g",
+      "sha256": "54ff557e9f8f96a09c179ad2101dbca7e608ebc826b03c8833518097fa2dd32f"
+    },
+    {
+      "input": "Hello HELLO hello",
+      "name": "case is kept",
+      "normalized": "Hello HELLO hello",
+      "sha256": "b84846864eb0a3cb244a083d20cfdf346b75d01c64b10c5ac21749ac2e9456ea"
+    },
+    {
+      "input": "a , b . c",
+      "name": "punctuation is kept",
+      "normalized": "a , b . c",
+      "sha256": "1aa7f0ec46b6bed8c32f0b128c420097e346faedee8e081fb83342728c115cd6"
+    },
+    {
+      "input": "a\u00a0b",
+      "name": "nbsp is not collapsed",
+      "normalized": "a\u00a0b",
+      "sha256": "9507017c6d887511a5a6ac28ea7e3a438882576e1bd76fe3df27a336f49c263b"
+    },
+    {
+      "input": "e\u0301",
+      "name": "nfd becomes nfc",
+      "normalized": "\u00e9",
+      "sha256": "4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c"
+    },
+    {
+      "input": "\u00e9",
+      "name": "already nfc",
+      "normalized": "\u00e9",
+      "sha256": "4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c"
+    },
+    {
+      "input": "\u65e5\u672c\u8a9e  \ud83d\ude00",
+      "name": "cjk and emoji",
+      "normalized": "\u65e5\u672c\u8a9e \ud83d\ude00",
+      "sha256": "fde211ca1a740f4758ae554eb97eca48c2aa74cdf8b656adfa31266d72b6106c"
+    },
+    {
+      "input": "a\ud800b",
+      "name": "lone surrogate becomes U+FFFD",
+      "normalized": "a\ufffdb",
+      "sha256": "05087813392efc16fe8ff448920c6328e53af865df39419436659d9ffda90f7b"
+    },
+    {
+      "input": " \t\n ",
+      "name": "only whitespace",
+      "normalized": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

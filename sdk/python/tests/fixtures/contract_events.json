@@ -217,6 +217,62 @@
       "kind": "llm",
       "status": "ok",
       "ts": "2026-11-20T12:00:00.123Z"
+    },
+    {
+      "args_hash": "94a786c3662bc7beeb598efa7d8cb58d7bea25d6c275ea9785a0230ff1f8c2ba",
+      "event_id": "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e001b",
+      "kind": "llm",
+      "prompt_hash": "73a09f9849b7bff6763f115a913f6ee1d973a045ce8082fdb420bfe69534ee8c",
+      "status": "ok",
+      "ts": "2026-11-20T12:00:00.123Z",
+      "user_id_hash": "b96e6950250755d98b7e4686914b46238c6861c0ed59a4f42a512919cfac09dd"
+    },
+    {
+      "event_id": "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e001c",
+      "kind": "llm",
+      "prompt_hash": "4e79873118cd9be7a1f0308b9cd772950c5410c74ca3fe1ba2626cba009a9237",
+      "status": "ok",
+      "ts": "2026-11-20T12:00:00.123Z",
+      "user_id_hash": "8a4b517460f7892426a8101e8af5138b009ec690f70c2a0d8cf3d5ea3bce67ac"
+    },
+    {
+      "event_id": "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e001d",
+      "kind": "llm",
+      "status": "ok",
+      "ts": "2026-11-20T12:00:00.123Z"
+    },
+    {
+      "event_id": "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e001e",
+      "kind": "llm",
+      "prompt_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "status": "ok",
+      "ts": "2026-11-20T12:00:00.123Z"
+    },
+    {
+      "error": "User [redacted:email] not found; token [redacted:secret]   at line 3",
+      "event_id": "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e001f",
+      "kind": "llm",
+      "status": "error",
+      "ts": "2026-11-20T12:00:00.123Z"
+    },
+    {
+      "content": {
+        "input": "mail [redacted:email] card [redacted:card]",
+        "output": "call [redacted:phone]"
+      },
+      "event_id": "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e0020",
+      "kind": "llm",
+      "status": "ok",
+      "ts": "2026-11-20T12:00:00.123Z"
+    },
+    {
+      "content": {
+        "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa [redacted:secret]"
+      },
+      "event_id": "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e0021",
+      "kind": "llm",
+      "status": "ok",
+      "ts": "2026-11-20T12:00:00.123Z"
     }
   ]
 }
