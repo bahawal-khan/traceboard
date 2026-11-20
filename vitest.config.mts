@@ -25,6 +25,11 @@ export default defineConfig({
           name: "db",
           include: ["tests/db/**/*.test.ts"],
           fileParallelism: false,
+          // Slow machines and Neon cold starts: generous limits, DB project only.
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
+          // Fails the whole run up front, with one clear message, if the database is unreachable.
+          globalSetup: ["tests/global-setup-db.ts"],
           setupFiles: ["tests/setup-db-retry.ts"],
         },
       },

@@ -14,7 +14,9 @@
     "db:setup-roles": "node scripts/setup-roles.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "node scripts/seed-prices.mjs"
+    "db:seed": "node scripts/seed-prices.mjs",
+    "test:unit": "vitest run --project unit",
+    "test:db": "vitest run --project db"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

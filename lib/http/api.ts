@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 import { ZodError } from "zod";
+import { isConnectionError } from "@/lib/errors/connection";
 import { logger, type Logger } from "@/lib/logger";
 import { requestIdFrom, REQUEST_ID_HEADER } from "@/lib/request-id";
 import { isSameOrigin, SAFE_METHODS } from "@/lib/security/origin";
@@ -9,10 +10,10 @@ import type { SessionCtx } from "@/lib/repo/tenant";
 
 const MAX_BODY_BYTES = 8 * 1024;
 
-export function json(body: unknown, status: number, requestId?: string): Response {
+export function json(body: unknown, status: number, requestId?: string, extraHeaders: Record<string, string> = {}): Response {
   return Response.json(body, {
     status,
-    headers: { "Cache-Control": "private, no-store", ...(requestId ? { [REQUEST_ID_HEADER]: requestId } : {}) },
+    headers: { "Cache-Control": "private, no-store", ...extraHeaders, ...(requestId ? { [REQUEST_ID_HEADER]: requestId } : {}) },
   });
 }
 
@@ -67,6 +68,11 @@ export function sessionRoute<P = Record<string, never>>(
       if (err instanceof BadBodyError) return json({ error: "invalid_request" }, 400, requestId);
       if (err instanceof NotFoundError) return json({ error: "not_found" }, 404, requestId);
       if (err instanceof LimitReachedError) return json({ error: "limit_reached", limit: err.limit }, 403, requestId);
+      if (isConnectionError(err)) {
+        // The database could not be reached (after the repo layer's one retry): transient, not a bug.
+        log.warn("database unreachable", { requestId });
+        return json({ error: "service_unavailable", requestId }, 503, requestId, { "Retry-After": "5" });
+      }
       log.error("route failed", { err });
       return json({ error: "internal", requestId }, 500, requestId);
     }
