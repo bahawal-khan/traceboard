@@ -370,6 +370,14 @@ class Monitor(object):
         return self._holder is not None
 
     @property
+    def captures_content(self) -> bool:
+        """True when the project opted in to content capture (wrappers only build content text then)."""
+        try:
+            return self._holder is not None and bool(self._holder.get().cfg.capture_content)
+        except Exception:
+            return False
+
+    @property
     def stats(self) -> Dict[str, Any]:
         """A snapshot of the counters. Always safe to call."""
         try:

@@ -49,3 +49,27 @@ source .venv/bin/activate             # Windows: .venv\Scripts\activate
 python -m pip install -e ".[dev]"     # installs pytest; the SDK itself has no dependencies
 python -m pytest                      # or, with no extra packages at all:  python -m unittest discover -s tests
 ```
+
+## Traces, tools and OpenAI
+
+```python
+from openai import OpenAI
+from llm_monitor import Monitor, span, observe, set_default_monitor
+from llm_monitor.integrations.openai import instrument_openai
+
+mon = Monitor()
+set_default_monitor(mon)
+client = instrument_openai(OpenAI())           # also AsyncOpenAI; streaming included
+
+@observe(kind="tool")                           # one event per call; arguments are hashed, never stored
+def search(q): ...
+
+with span("support agent", kind="agent"):       # starts a trace; everything inside is a child
+    search("refund policy")
+    client.chat.completions.create(model="gpt-4o", messages=[...])
+```
+
+- LLM calls record the model the API reports, input/output/cached tokens, latency, time to first token (streams) and a hash of the messages. Message text is sent only if you opted in with `capture_content=True`, and is redacted locally first.
+- Streams: if you did not pass `stream_options`, the wrapper adds `include_usage` so token counts exist and hides the extra usage-only chunk from you. A stream you abandon is still recorded (tag `incomplete`).
+- Context follows asyncio tasks. Plain threads do not inherit it: start them with `contextvars.copy_context().run(...)`.
+- Not covered yet: `responses.create`, `with_raw_response`, `beta.*`; call `instrument_openai` again on clients made with `with_options()`.
