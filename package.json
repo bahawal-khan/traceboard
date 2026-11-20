@@ -13,7 +13,8 @@
     "check": "npm run lint && npm run typecheck && npm run test",
     "db:setup-roles": "node scripts/setup-roles.mjs",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "node scripts/seed-prices.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
