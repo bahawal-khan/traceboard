@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { GB, maxEventsPerDayPerProject, maxRowsPerDayPerProject, minuteRollupWorstCaseBytes, share } from "@/lib/capacity";
+import { GB, hourlyRollupWorstCaseBytes, maxEventsPerDayPerProject, maxRowsPerDayPerProject, minuteRollupWorstCaseBytes, share } from "@/lib/capacity";
 import { QUOTAS, SIZING } from "@/lib/quotas";
 
 interface EventRun {
@@ -86,9 +86,33 @@ describe("quotas are consistent with the measured row sizes", () => {
     expect(SIZING.contentWindowDays).toBe(3 + 1);
   });
 
+  it("SIZING.rollupRowBytes is the measured rollup row x 1.25, rounded up to 10", () => {
+    const measured = report.rollups.metrics_minute.totalBytes / report.rollups.metrics_minute.rows;
+    expect(SIZING.rollupRowBytes).toBeGreaterThanOrEqual(measured * 1.25);
+    expect(SIZING.rollupRowBytes).toBeLessThan(measured * 1.25 + 10);
+  });
+
+  const minuteBytes = () =>
+    minuteRollupWorstCaseBytes({ requestsPerDay: QUOTAS.ingestRequestsPerDayPerProject, modelsPerRequest: SIZING.rollupModelsPerProject, hours: SIZING.minuteRollupHours, bytesPerRow: SIZING.rollupRowBytes }) * projects;
+  const hourlyBytes = () =>
+    hourlyRollupWorstCaseBytes({ days: SIZING.hourlyRollupDays, modelsPerProject: SIZING.rollupModelsPerProject, shards: SIZING.hourlyRollupShards, bytesPerRow: SIZING.rollupRowBytes }) * projects;
+
   it("worst-case minute rollups (bounded by the request quota) stay within 15 percent of the database", () => {
-    const row = (report.rollups.metrics_minute.totalBytes / report.rollups.metrics_minute.rows) * 1.25;
-    const perProject = minuteRollupWorstCaseBytes({ requestsPerDay: QUOTAS.ingestRequestsPerDayPerProject, modelsPerRequest: 3, hours: 48, bytesPerRow: row });
-    expect(share(perProject * projects, SIZING.databaseBytes)).toBeLessThanOrEqual(0.15);
+    expect(share(minuteBytes(), SIZING.databaseBytes)).toBeLessThanOrEqual(0.15);
+  });
+
+  it("hourly rollups use ONE shard, and their worst case is small (it was 29 percent with eight shards)", () => {
+    expect(SIZING.hourlyRollupShards).toBe(1);
+    expect(share(hourlyBytes(), SIZING.databaseBytes)).toBeLessThan(0.05);
+    const eightShards = hourlyRollupWorstCaseBytes({ days: SIZING.hourlyRollupDays, modelsPerProject: SIZING.rollupModelsPerProject, shards: 8, bytesPerRow: SIZING.rollupRowBytes }) * projects;
+    expect(share(eightShards, SIZING.databaseBytes)).toBeGreaterThan(0.25);
+  });
+
+  it("the worst case of everything we meter, all at its quota at once, no longer exceeds the database (at least 10 percent headroom)", () => {
+    const events = QUOTAS.eventsPerDayPerProject * SIZING.eventWindowDays * projects * SIZING.eventRowBytes;
+    const content = QUOTAS.contentRowsPerDayPerProject * SIZING.contentWindowDays * projects * SIZING.contentRowBytes;
+    const total = share(events + content + minuteBytes() + hourlyBytes(), SIZING.databaseBytes);
+    expect(total).toBeLessThan(0.9); // the rest is control-plane, evals, jobs, alerts, audit log and WAL headroom
+    expect(total).toBeGreaterThan(0.5); // and the budget is not absurdly slack either
   });
 });

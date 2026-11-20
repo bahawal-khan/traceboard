@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventsStorageBytes, GB, maxEventsPerDayPerProject, maxRowsPerDayPerProject, minuteRollupWorstCaseBytes, peakEventDays, share } from "@/lib/capacity";
+import { eventsStorageBytes, GB, hourlyRollupWorstCaseBytes, maxEventsPerDayPerProject, maxRowsPerDayPerProject, minuteRollupWorstCaseBytes, peakEventDays, share } from "@/lib/capacity";
 
 describe("capacity math", () => {
   const base = { databaseBytes: GB, eventsShare: 0.6, bytesPerEvent: 500, windowDays: 14, projects: 20 };
@@ -39,6 +39,13 @@ describe("capacity math", () => {
     expect(maxRowsPerDayPerProject({ budgetBytes: 0.6 * GB, bytesPerRow: 1050, windowDays: 15, projects: 20 })).toBe(events);
     expect(maxRowsPerDayPerProject({ budgetBytes: 0.15 * GB, bytesPerRow: 8200, windowDays: 4, projects: 20 }, 50)).toBe(200); // 228 -> 200
     expect(maxRowsPerDayPerProject({ budgetBytes: 100, bytesPerRow: 1000, windowDays: 1, projects: 1 })).toBe(0); // never rounds up
+  });
+
+  it("hourly rollups: one shard is 8x smaller than eight, and linear in days and models", () => {
+    const one = hourlyRollupWorstCaseBytes({ days: 90, modelsPerProject: 3, shards: 1, bytesPerRow: 290 });
+    expect(one).toBe(90 * 24 * 3 * 290); // 1,879,200
+    expect(hourlyRollupWorstCaseBytes({ days: 90, modelsPerProject: 3, shards: 8, bytesPerRow: 290 })).toBe(one * 8);
+    expect(hourlyRollupWorstCaseBytes({ days: 45, modelsPerProject: 3, shards: 1, bytesPerRow: 290 })).toBe(one / 2);
   });
 
   it("share is a plain ratio", () => {

@@ -117,6 +117,18 @@ describe("PgEventStore (statement shape; no database)", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
+  it("spreads minute rollups over shards but writes hourly rollups with the single shard 0", async () => {
+    await new PgEventStore({ pickShard: () => 5 }).persist(ctx(), [ev()]);
+    const text = seen[1]!.text;
+    const hourly = text.slice(text.indexOf("insert into metrics_hourly"), text.indexOf("u as ("));
+    const minute = text.slice(text.indexOf("insert into metrics_minute"), text.indexOf("h as ("));
+    expect(hourly).toContain("0::smallint");
+    expect(hourly).not.toMatch(/\?::smallint/); // no shard parameter in the hourly statement
+    expect(minute).toMatch(/\?::smallint/); // the minute statement takes the picked shard
+    expect(seen[1]!.values.filter((v) => v === 5)).toHaveLength(1); // the shard parameter appears exactly once
+    expect(hourly).toContain("on conflict (project_id, bucket, model, shard)"); // the column and key stay: no migration
+  });
+
   it("maps a missing-partition error to MissingPartitionError and passes other errors through", async () => {
     const missing = Object.assign(new NeonDbError('no partition of relation "events" found for row'), { code: "23514" });
     mocks.transaction.mockRejectedValueOnce(missing);

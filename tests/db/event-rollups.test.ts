@@ -90,6 +90,7 @@ run("event rollups (database)", () => {
     const s = await snapshot(a);
     expect(s.minute).toHaveLength(3); // gpt-4o, claude, '' (model-less)
     const gpt = s.minute.find((m) => m.model === "gpt-4o")!;
+    expect(s.hourly.every((h) => h.shard === 0)).toBe(true); // hourly is always shard 0, the minute rollup used shard 3
     expect(gpt).toMatchObject({ shard: 3, calls: 2, it: "300", ot: "60", cm: "4000", errors: 1, ls: "150", lat_b0: 1, lat_b2: 1, lat_b1: 0, lat_b11: 0 });
     expect(s.minute.find((m) => m.model === "claude")).toMatchObject({ calls: 1, cm: "400", lat_b11: 1, ls: "60000" });
     // The model-less tool event counts as a call but sits in no latency bucket and adds no latency.
@@ -180,7 +181,7 @@ run("event rollups (database)", () => {
     expect(s.hourly[0]).toMatchObject({ calls: 1, cm: "100" });
   });
 
-  it("different shards give separate rows for the same bucket and model; their sum is exact", async () => {
+  it("minute rollups: different shards give separate rows for the same bucket and model, their sum is exact; hourly uses one row", async () => {
     const a = await tenant();
     await new PgEventStore({ pickShard: () => 2 }).persist(a.ctx, [priced("m", 1, 1, 10)]);
     await new PgEventStore({ pickShard: () => 6 }).persist(a.ctx, [priced("m", 1, 1, 20)]);
@@ -188,7 +189,8 @@ run("event rollups (database)", () => {
     expect(rows).toEqual([{ shard: 2, calls: 1, cm: "10" }, { shard: 6, calls: 1, cm: "20" }]);
     const [sum] = await q(a, "select sum(calls)::int as calls, sum(cost_micro)::text as cm from metrics_minute");
     expect(sum).toEqual({ calls: 2, cm: "30" });
-    expect(await q(a, "select count(*)::int as n from metrics_hourly")).toEqual([{ n: 2 }]); // hourly rows are sharded too
+    // Hourly rows are NOT sharded: both writes land in ONE row with shard 0, whatever shard the minute rollup used.
+    expect(await q(a, "select shard, calls, cost_micro::text as cm from metrics_hourly")).toEqual([{ shard: 0, calls: 2, cm: "30" }]);
   });
 
   it("concurrent writers on the same project, minute, model AND shard finish without errors and lose no counts", async () => {
@@ -204,9 +206,33 @@ run("event rollups (database)", () => {
     const [m] = await q(a, "select sum(calls)::int as calls, sum(cost_micro)::text as cm from metrics_minute");
     expect(m).toEqual({ calls: 16, cm: "1600" });
     expect(await q(a, "select count(*)::int as n from metrics_minute")).toEqual([{ n: 2 }]); // one row per model, one shard
+    // The hourly rows are one row per model and are written by every writer: the contended case. All counts must survive.
+    expect(await q(a, "select model, shard, calls, cost_micro::text as cm from metrics_hourly order by model")).toEqual([
+      { model: "m", shard: 0, calls: 8, cm: "800" },
+      { model: "n", shard: 0, calls: 8, cm: "800" },
+    ]);
     const s = await snapshot(a);
     expect(s.usage).toEqual([{ events: "16", requests: "8", cm: "1600" }]);
     expect(s.budget.find((b) => b.budget_id === a.budgets.run && b.period_key === "shared")?.spent).toBe("1600");
+  });
+
+  it("concurrent writers on DIFFERENT minute shards still contend on the single hourly row and lose nothing", async () => {
+    const a = await tenant();
+    // Eight writers, eight different minute shards, same model and hour, batches in alternating event order. The hourly
+    // row (and usage_daily) is shared by all of them; a deadlock between them is retried once, so none may surface.
+    const writers = Array.from({ length: 8 }, (_, i) => {
+      const batch = [priced("m", 1, 1, 100, { traceId: "t1" }), priced("n", 1, 1, 100, { traceId: "t2" })];
+      return new PgEventStore({ pickShard: () => i }).persist(a.ctx, i % 2 ? batch.reverse() : batch);
+    });
+    const results = await Promise.all(writers); // rejects on any error that survived the single retry
+    expect(results.every((r) => r.inserted === 2)).toBe(true);
+    expect(await q(a, "select model, shard, calls from metrics_hourly order by model")).toEqual([
+      { model: "m", shard: 0, calls: 8 },
+      { model: "n", shard: 0, calls: 8 },
+    ]);
+    const [minute] = await q(a, "select sum(calls)::int as calls, count(*)::int as rows from metrics_minute");
+    expect(minute).toEqual({ calls: 16, rows: 16 }); // 8 shards x 2 models, still sharded
+    expect(await q(a, "select events::text as e, requests::text as r from usage_daily")).toEqual([{ e: "16", r: "8" }]);
   });
 
   it("IDOR: tenants never touch each other's rollups, usage or budgets", async () => {

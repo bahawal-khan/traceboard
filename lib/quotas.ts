@@ -94,6 +94,14 @@ export const SIZING = {
   contentShare: 0.15,
   contentRowBytes: 8_200,
   contentWindowDays: 4,
+  /** metrics_minute / metrics_hourly row: measured 227.3 B x 1.25 = 284.1 -> 290. */
+  rollupRowBytes: 290,
+  /** Distinct models one project is assumed to use in the worst case. */
+  rollupModelsPerProject: 3,
+  minuteRollupHours: 48,
+  hourlyRollupDays: 90,
+  /** Hourly rows use one shard (P2.6b). */
+  hourlyRollupShards: 1,
 } as const;
 
 export type Quotas = typeof QUOTAS;

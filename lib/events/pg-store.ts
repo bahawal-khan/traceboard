@@ -77,7 +77,7 @@ function mapError(err: unknown): unknown {
 const defaultRetryDelayMs = () => 50 + Math.random() * 100;
 
 export interface PgEventStoreOptions {
-  /** Which of the ROLLUP_SHARDS rows this write uses; random by default, injectable for tests. */
+  /** Which of the ROLLUP_SHARDS minute-rollup rows this write uses; random by default, injectable for tests. Hourly rows always use shard 0. */
   pickShard?: () => number;
   /** Delay before the single deadlock/serialization retry. Injectable for tests. */
   retryDelayMs?: () => number;
@@ -100,7 +100,8 @@ export interface PgEventStoreOptions {
  * The one exception is `usage_daily.requests`, which counts requests (invocations), duplicates included.
  *
  * Counting rules: every inserted event adds to `calls` (all kinds); model-less events (tools, custom)
- * roll up under model ''. Minute rollups are written only for events newer than 48 h. Aggregated
+ * roll up under model ''. Minute rollups (spread over ROLLUP_SHARDS shard rows) are written only for events newer than 48 h;
+ * hourly rollups always use shard 0 (no contention to avoid at free-tier volumes; it keeps the worst-case storage small). Aggregated
  * inserts are ORDERed so concurrent writers lock rows in the same order. Unknown cost counts as 0.
  * A deadlock (40P01) or serialization failure (40001) is retried ONCE after 50-150 ms; nothing else is.
  */
@@ -212,7 +213,7 @@ export class PgEventStore implements EventStore {
         h as (
           insert into metrics_hourly (project_id, bucket, model, shard, calls, input_tokens, output_tokens, cost_micro, errors, lat_sum_ms,
                                       lat_b0, lat_b1, lat_b2, lat_b3, lat_b4, lat_b5, lat_b6, lat_b7, lat_b8, lat_b9, lat_b10, lat_b11)
-          select ${projectId}::uuid, date_trunc('hour', occurred_at), model, ${shard}::smallint, count(*)::int, sum(it), sum(ot), sum(cost_micro),
+          select ${projectId}::uuid, date_trunc('hour', occurred_at), model, 0::smallint, count(*)::int, sum(it), sum(ot), sum(cost_micro),
                  (count(*) filter (where is_err))::int, coalesce(sum(latency_ms), 0),
                  (count(*) filter (where lb = 0))::int, (count(*) filter (where lb = 1))::int, (count(*) filter (where lb = 2))::int,
                  (count(*) filter (where lb = 3))::int, (count(*) filter (where lb = 4))::int, (count(*) filter (where lb = 5))::int,
