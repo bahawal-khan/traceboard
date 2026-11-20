@@ -12,7 +12,7 @@ const ORIGIN = "https://app.example.com";
 const PID = "11111111-1111-4111-8111-111111111111";
 const KID = "22222222-2222-4222-8222-222222222222";
 const SECRET = `lm_${"A".repeat(43)}`;
-const meta = { id: KID, prefix: "lm_AAAAA", scopes: ["ingest"], lastUsedAt: null, revokedAt: null, createdAt: "2026-11-20T00:00:00.000Z" };
+const meta = { id: KID, name: "production", prefix: "lm_AAAAA", scopes: ["ingest"], lastUsedAt: null, revokedAt: null, createdAt: "2026-11-20T00:00:00.000Z" };
 const ctx = { kind: "session", ownerId: "user_a", projectIds: [], readOnly: false };
 const p = (id = PID, keyId = KID) => ({ params: Promise.resolve({ id, keyId }) });
 const req = (method: string, path: string, opts: { origin?: string | null; body?: unknown } = {}) =>
@@ -58,6 +58,23 @@ describe("api key routes (mocked repo)", () => {
     const text = await l.text();
     expect(text).not.toContain(SECRET);
     expect(text).not.toMatch(/secret|hash/i);
+  });
+
+  it("create passes the name through to the repo and returns it, secret unchanged", async () => {
+    m.createApiKey.mockResolvedValue({ key: meta, secret: SECRET });
+    const r = await create(req("POST", base, { body: { name: "production", scopes: ["ingest"] } }), p());
+    expect(r.status).toBe(201);
+    expect(m.createApiKey.mock.calls[0][2]).toEqual({ name: "production", scopes: ["ingest"] });
+    const body = (await r.json()) as { key: { name: string }; secret: string };
+    expect(body.key.name).toBe("production");
+    expect(body.secret).toBe(SECRET);
+  });
+
+  it("a key name that looks like a secret is never echoed in an error response", async () => {
+    m.createApiKey.mockRejectedValue(new Error(`insert failed for name ${SECRET}`));
+    const r = await create(req("POST", base, { body: { name: SECRET } }), p());
+    expect(r.status).toBe(500);
+    expect(await r.text()).not.toContain(SECRET);
   });
 
   it("create accepts an empty body (default scope) and rejects malformed JSON", async () => {

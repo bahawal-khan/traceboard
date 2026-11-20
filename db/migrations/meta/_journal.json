@@ -57,6 +57,13 @@
       "when": 1795033964735,
       "tag": "0007_user_slots",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795154934722,
+      "tag": "0008_api_key_name",
+      "breakpoints": true
     }
   ]
 }

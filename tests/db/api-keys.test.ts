@@ -105,6 +105,80 @@ run("api keys", () => {
     });
   });
 
+  describe("key name", () => {
+    it("stores the trimmed name and returns it from create and list; the secret is unchanged", async () => {
+      const { owner, ctx, project } = await setup();
+      const { key, secret } = await createApiKey(ctx, project, { name: "  CI pipeline  " });
+      expect(key.name).toBe("CI pipeline");
+      expect(secret).toMatch(/^lm_[A-Za-z0-9_-]{43}$/);
+      expect(key.prefix).toBe(secret.slice(0, 8));
+      expect((await listApiKeys(ctx, project))[0].name).toBe("CI pipeline");
+      const [, rows] = await raw(owner, [project], (t) => [t`select name, key_hash from api_keys where id = ${key.id}`]);
+      expect(rows[0]).toEqual({ name: "CI pipeline", key_hash: hashApiKey(secret) });
+      expect(await ctxFromApiKey(secret)).not.toBeNull(); // naming does not affect authentication
+    });
+
+    it("works with no name and with an empty or blank name (stored as empty)", async () => {
+      const { ctx, project } = await setup();
+      expect((await createApiKey(ctx, project, {})).key.name).toBe("");
+      expect((await createApiKey(ctx, project, { name: "" })).key.name).toBe("");
+      expect((await createApiKey(ctx, project, { name: "   " })).key.name).toBe("");
+      expect((await listApiKeys(ctx, project)).map((k) => k.name)).toEqual(["", "", ""]);
+    });
+
+    it("rejects a name over 60 characters at the repo and the route, and creates nothing", async () => {
+      const { owner, ctx, project } = await setup();
+      await expect(createApiKey(ctx, project, { name: "x".repeat(61) })).rejects.toThrow();
+      signIn(owner);
+      const base = `/api/dashboard/projects/${project}/keys`;
+      const r = await createRoute(http("POST", base, { name: "x".repeat(61) }), params(project));
+      expect(r.status).toBe(422);
+      expect(await r.json()).toEqual({ error: "invalid_request" });
+      expect(await listApiKeys(await ctxFor(owner), project)).toHaveLength(0);
+      const ok = await createRoute(http("POST", base, { name: "x".repeat(60) }), params(project));
+      expect(ok.status).toBe(201);
+    });
+
+    it("the name never changes the cap, and revoked keys keep their name", async () => {
+      const { ctx, project } = await setup();
+      const first = await createApiKey(ctx, project, { name: "old" });
+      for (let i = 1; i < QUOTAS.keysPerProject; i++) await createApiKey(ctx, project, { name: `k${i}` });
+      await expect(createApiKey(ctx, project, { name: "over" })).rejects.toBeInstanceOf(LimitReachedError);
+      await revokeApiKey(ctx, project, first.key.id);
+      const listed = await listApiKeys(ctx, project);
+      expect(listed.find((k) => k.id === first.key.id)).toMatchObject({ name: "old", revokedAt: expect.any(String) });
+    });
+
+    it("IDOR holds for named keys: B cannot read A's key names or create on A's project", async () => {
+      const a = await setup();
+      const { secret } = await createApiKey(a.ctx, a.project, { name: "A-private-label" });
+      const b = await ctxFor(await newUser());
+      await expect(listApiKeys(b, a.project)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(createApiKey(b, a.project, { name: "from-b" })).rejects.toBeInstanceOf(NotFoundError);
+      signIn(users[users.length - 1]);
+      const res = await listRoute(http("GET", `/api/dashboard/projects/${a.project}/keys`), params(a.project));
+      expect(res.status).toBe(404);
+      expect(await res.text()).not.toContain("A-private-label");
+      // A still sees only its own named key, and the secret still works.
+      expect((await listApiKeys(a.ctx, a.project)).map((k) => k.name)).toEqual(["A-private-label"]);
+      expect(await ctxFromApiKey(secret)).not.toBeNull();
+    });
+
+    it("a key-like name is not logged by the create path", async () => {
+      const { owner, project } = await setup();
+      const spies = (["log", "info", "warn", "error", "debug"] as const).map((l) => vi.spyOn(console, l).mockImplementation(() => {}));
+      signIn(owner);
+      const lookalike = `lm_${"Z".repeat(43)}`;
+      const r = await createRoute(http("POST", `/api/dashboard/projects/${project}/keys`, { name: lookalike.slice(0, 60) }), params(project));
+      expect(r.status).toBe(201);
+      const { secret } = (await r.json()) as { secret: string };
+      const logged = spies.flatMap((s) => s.mock.calls.flat()).map(String).join("\n");
+      spies.forEach((s) => s.mockRestore());
+      expect(logged).not.toContain(secret);
+      expect(logged).not.toContain(hashApiKey(secret));
+    });
+  });
+
   it("defaults to the ingest scope and rejects invalid scopes", async () => {
     const { ctx, project } = await setup();
     expect((await createApiKey(ctx, project, {})).key.scopes).toEqual(["ingest"]);
@@ -117,7 +191,7 @@ run("api keys", () => {
     const { secret } = await createApiKey(ctx, project, {});
     const keys = await listApiKeys(ctx, project);
     expect(keys).toHaveLength(1);
-    expect(Object.keys(keys[0]).sort()).toEqual(["createdAt", "id", "lastUsedAt", "prefix", "revokedAt", "scopes"]);
+    expect(Object.keys(keys[0]).sort()).toEqual(["createdAt", "id", "lastUsedAt", "name", "prefix", "revokedAt", "scopes"]);
     expect(JSON.stringify(keys)).not.toContain(secret);
   });
 

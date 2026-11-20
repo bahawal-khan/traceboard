@@ -26,8 +26,21 @@ describe("generateApiKey", () => {
 });
 
 describe("createApiKeyInput", () => {
-  it("defaults to the ingest scope", () => {
-    expect(createApiKeyInput.parse({})).toEqual({ scopes: ["ingest"] });
+  it("defaults to the ingest scope and an empty name", () => {
+    expect(createApiKeyInput.parse({})).toEqual({ scopes: ["ingest"], name: "" });
+  });
+
+  it("trims the name, allows empty and exactly 60 characters", () => {
+    expect(createApiKeyInput.parse({ name: "  production  " }).name).toBe("production");
+    expect(createApiKeyInput.parse({ name: "" }).name).toBe("");
+    expect(createApiKeyInput.parse({ name: "   " }).name).toBe("");
+    expect(createApiKeyInput.parse({ name: "x".repeat(60) }).name).toHaveLength(60);
+  });
+
+  it("rejects a name over 60 characters, with control characters, or of the wrong type", () => {
+    for (const name of ["x".repeat(61), "a\u0000b", "a\nb", 5, null]) {
+      expect(() => createApiKeyInput.parse({ name }), JSON.stringify(name)).toThrow();
+    }
   });
   it("accepts known scopes and rejects unknown, empty, duplicate and extra fields", () => {
     expect(createApiKeyInput.parse({ scopes: [...API_KEY_SCOPES] }).scopes).toEqual([...API_KEY_SCOPES]);

@@ -8,6 +8,8 @@ import { withTenant, type SessionCtx } from "./tenant";
 /** Everything the dashboard may know about a key. The secret and the hash never appear here. */
 export interface ApiKeyMeta {
   id: string;
+  /** User-chosen label; empty string when the key is unnamed (the UI then shows the prefix). */
+  name: string;
   prefix: string;
   scopes: string[];
   lastUsedAt: string | null;
@@ -32,6 +34,7 @@ const iso = (v: unknown) => (v == null ? null : new Date(v as string | Date).toI
 function toMeta(r: Record<string, unknown>): ApiKeyMeta {
   return {
     id: r.id as string,
+    name: (r.name as string | null) ?? "",
     prefix: r.prefix as string,
     scopes: r.scopes as string[],
     lastUsedAt: iso(r.last_used_at),
@@ -55,7 +58,7 @@ export interface CreatedApiKey {
  */
 export async function createApiKey(ctx: SessionCtx, project: string, input: unknown, ip: string | null = null): Promise<CreatedApiKey> {
   const pid = projectId.parse(project);
-  const { scopes } = createApiKeyInput.parse(input ?? {});
+  const { scopes, name } = createApiKeyInput.parse(input ?? {});
   requireInScope(ctx, pid);
   const gen = generateApiKey();
   const owner = ctx.ownerId;
@@ -64,17 +67,17 @@ export async function createApiKey(ctx: SessionCtx, project: string, input: unkn
     t`with p as (
         select id from projects where id = ${pid}::uuid and owner_id = ${owner}::text
       ), ins as (
-        insert into api_keys (project_id, key_hash, prefix, scopes)
-        select p.id, ${gen.hash}::text, ${gen.prefix}::text, ${scopes}::text[]
+        insert into api_keys (project_id, key_hash, prefix, scopes, name)
+        select p.id, ${gen.hash}::text, ${gen.prefix}::text, ${scopes}::text[], ${name}::text
           from p
          where (select count(*) from api_keys where project_id = p.id and revoked_at is null) < ${QUOTAS.keysPerProject}::int
-        returning id, prefix, scopes, last_used_at, revoked_at, created_at
+        returning id, name, prefix, scopes, last_used_at, revoked_at, created_at
       ), aud as (
         insert into audit_log (owner_id, action, target, ip)
         select ${owner}::text, 'api_key.create', id::text, ${ip}::text from ins
       )
       select (select count(*)::int from p) as project_found,
-             ins.id, ins.prefix, ins.scopes, ins.last_used_at, ins.revoked_at, ins.created_at
+             ins.id, ins.name, ins.prefix, ins.scopes, ins.last_used_at, ins.revoked_at, ins.created_at
         from (select 1) x left join ins on true`,
   ]);
   const row = rows[0];
@@ -88,7 +91,7 @@ export async function listApiKeys(ctx: SessionCtx, project: string): Promise<Api
   requireInScope(ctx, pid);
   const [owned, rows] = await withTenant(ctx, (t) => [
     t`select 1 as ok from projects where id = ${pid}::uuid and owner_id = ${ctx.ownerId}`,
-    t`select id, prefix, scopes, last_used_at, revoked_at, created_at
+    t`select id, name, prefix, scopes, last_used_at, revoked_at, created_at
         from api_keys where project_id = ${pid}::uuid order by created_at desc`,
   ]);
   if (owned.length === 0) throw new NotFoundError();
