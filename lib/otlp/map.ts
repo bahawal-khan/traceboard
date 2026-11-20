@@ -20,7 +20,57 @@ export const OTLP_LIMITS = {
 } as const;
 
 export type SpanReject = "over_limit" | "bad_ids" | "bad_time" | "invalid";
-export type MapResult = { events: IngestEvent[]; rejected: Record<SpanReject, number> };
+export type MapResult = {
+  events: IngestEvent[];
+  rejected: Record<SpanReject, number>;
+  /** Spans left out by the GenAI-only filter. NOT rejections: they are not reported in `rejectedSpans`. */
+  filtered: number;
+};
+
+/**
+ * Best-effort memory of "spans a kept span points at", so an ancestor that arrives in a LATER export request (OTel batches
+ * spans in end order, so a parent usually arrives after its children, and a long run can span several requests) is still
+ * kept. Per server instance, bounded, expiring. A miss only costs a missing ancestor in the trace view (orphans are shown).
+ */
+export class WantedSpanCache {
+  private readonly map = new Map<string, number>();
+  constructor(
+    private readonly max = 20_000,
+    private readonly ttlMs = 30 * 60_000,
+    private readonly now: () => number = Date.now,
+  ) {}
+  has(key: string): boolean {
+    const at = this.map.get(key);
+    if (at === undefined) return false;
+    if (at < this.now()) {
+      this.map.delete(key);
+      return false;
+    }
+    return true;
+  }
+  add(key: string): void {
+    this.map.delete(key); // refresh the insertion order
+    this.map.set(key, this.now() + this.ttlMs);
+    while (this.map.size > this.max) this.map.delete(this.map.keys().next().value as string);
+  }
+  get size(): number {
+    return this.map.size;
+  }
+}
+
+export interface MapOptions {
+  /** Keep only GenAI / OpenInference / OpenLLMetry spans and their ancestors. Default false here; the route turns it on. */
+  genAiOnly?: boolean;
+  wanted?: WantedSpanCache;
+  /** Scopes the wanted-span memory so projects never influence each other. */
+  projectId?: string;
+}
+
+const AI_PREFIXES = ["gen_ai.", "llm.", "openinference.", "traceloop."];
+const hasAiAttribute = (a: Attrs): boolean => {
+  for (const k of a.keys()) if (AI_PREFIXES.some((p) => k.startsWith(p))) return true;
+  return false;
+};
 
 type Attrs = Map<string, string | number | boolean>;
 
@@ -128,22 +178,25 @@ function errorTextOf(span: OtlpSpan, a: Attrs): string | undefined {
 
 const isErrorStatus = (code: unknown) => code === 2 || code === "2" || code === "STATUS_CODE_ERROR";
 
-function mapSpan(span: OtlpSpan, service: string | undefined): { event: IngestEvent } | { reject: SpanReject } {
+type Mapped = { event: IngestEvent; ai: boolean; key: string; parentKey: string | null } | { reject: SpanReject; ai: boolean };
+
+function mapSpan(span: OtlpSpan, service: string | undefined): Mapped {
+  const a = attrsOf(span.attributes);
+  const ai = hasAiAttribute(a);
   const traceId = parseTraceId(span.traceId ?? span.trace_id);
   const spanId = parseSpanId(span.spanId ?? span.span_id);
-  if (!traceId || !spanId) return { reject: "bad_ids" };
+  if (!traceId || !spanId) return { reject: "bad_ids", ai };
   const parent = parseSpanId(span.parentSpanId ?? span.parent_span_id);
 
   const start = nanos(span.startTimeUnixNano ?? span.start_time_unix_nano);
-  if (start === null || start === BigInt(0)) return { reject: "bad_time" };
+  if (start === null || start === BigInt(0)) return { reject: "bad_time", ai };
   const startMs = Number(start / BigInt(1_000_000));
   const ts = new Date(startMs);
-  if (Number.isNaN(ts.getTime())) return { reject: "bad_time" };
+  if (Number.isNaN(ts.getTime())) return { reject: "bad_time", ai };
   const end = nanos(span.endTimeUnixNano ?? span.end_time_unix_nano);
   let latencyMs: number | undefined;
   if (end !== null && end >= start) latencyMs = Math.min(Number((end - start) / BigInt(1_000_000)), INGEST_LIMITS.maxLatencyMs);
 
-  const a = attrsOf(span.attributes);
   const model = label(str(a, "gen_ai.response.model", "gen_ai.request.model", "llm.model_name"), 100);
   const provider = label(str(a, "gen_ai.provider.name", "gen_ai.system", "llm.provider", "llm.system"), 50);
 
@@ -187,12 +240,13 @@ function mapSpan(span: OtlpSpan, service: string | undefined): { event: IngestEv
     tags,
   };
   const parsed = ingestEvent.safeParse(candidate);
-  return parsed.success ? { event: parsed.data } : { reject: "invalid" };
+  return parsed.success ? { event: parsed.data, ai, key: `${traceId}:${spanId}`, parentKey: parent ? `${traceId}:${parent}` : null } : { reject: "invalid", ai };
 }
 
-export function mapOtlpTraces(req: OtlpTraceRequest): MapResult {
-  const events: IngestEvent[] = [];
+export function mapOtlpTraces(req: OtlpTraceRequest, options: MapOptions = {}): MapResult {
   const rejected: Record<SpanReject, number> = { over_limit: 0, bad_ids: 0, bad_time: 0, invalid: 0 };
+  const items: Array<Extract<Mapped, { event: IngestEvent }>> = [];
+  let filtered = 0;
   let seen = 0;
   for (const rs of req.resourceSpans ?? req.resource_spans ?? []) {
     const service = str(attrsOf(rs.resource?.attributes), "service.name");
@@ -203,10 +257,33 @@ export function mapOtlpTraces(req: OtlpTraceRequest): MapResult {
           continue;
         }
         const r = mapSpan(sp, service);
-        if ("event" in r) events.push(r.event);
+        if ("event" in r) items.push(r);
+        // A span that is not AI-related is simply filtered (not a rejection) even if it could not be mapped.
+        else if (options.genAiOnly && !r.ai) filtered++;
         else rejected[r.reject]++;
       }
     }
   }
-  return { events, rejected };
+  if (!options.genAiOnly) return { events: items.map((i) => i.event), rejected, filtered };
+
+  const wanted = options.wanted;
+  const scope = (key: string) => `${options.projectId ?? ""}|${key}`;
+  const byKey = new Map(items.map((i) => [i.key, i]));
+  const kept = new Set<string>();
+  for (const it of items) {
+    if (!it.ai && !(wanted && wanted.has(scope(it.key)))) continue;
+    // Keep the span and every ancestor that is in this request (walk up; `kept` also stops a parent cycle).
+    for (let cur: (typeof items)[number] | undefined = it; cur && !kept.has(cur.key); cur = cur.parentKey ? byKey.get(cur.parentKey) : undefined) kept.add(cur.key);
+  }
+  const events: IngestEvent[] = [];
+  for (const it of items) {
+    if (!kept.has(it.key)) {
+      filtered++;
+      continue;
+    }
+    events.push(it.event);
+    // The parent may arrive in a later request: remember it, so it is kept then.
+    if (wanted && it.parentKey && !byKey.has(it.parentKey)) wanted.add(scope(it.parentKey));
+  }
+  return { events, rejected, filtered };
 }
