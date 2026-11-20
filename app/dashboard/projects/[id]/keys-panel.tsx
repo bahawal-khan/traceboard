@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 
 interface Key {
   id: string;
+  name: string;
   prefix: string;
   scopes: string[];
   lastUsedAt: string | null;
@@ -20,7 +21,7 @@ const SCOPES = [
 
 const MESSAGES: Record<string, string> = {
   limit_reached: "Key limit reached. Revoke a key to create a new one.",
-  invalid_request: "Choose at least one scope.",
+  invalid_request: "Choose at least one scope and keep the name under 60 characters.",
   unauthorized: "Your session expired. Please sign in again.",
   forbidden: "Request blocked. Reload the page and try again.",
   not_found: "That key or project no longer exists.",
@@ -46,6 +47,7 @@ async function call<T>(url: string, method: string, body?: unknown): Promise<Res
 export function KeysPanel({ projectId, initial, limit }: { projectId: string; initial: Key[]; limit: number }) {
   const router = useRouter();
   const [scopes, setScopes] = useState<string[]>(["ingest"]);
+  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -59,11 +61,12 @@ export function KeysPanel({ projectId, initial, limit }: { projectId: string; in
   async function create() {
     setBusy(true);
     setError(null);
-    const r = await call<{ secret: string }>(base, "POST", { scopes });
+    const r = await call<{ secret: string }>(base, "POST", { scopes, name });
     setBusy(false);
     if (!r.ok) return setError(r.error);
     setSecret(r.data.secret);
     setCopied(false);
+    setName("");
     router.refresh();
   }
 
@@ -115,6 +118,20 @@ export function KeysPanel({ projectId, initial, limit }: { projectId: string; in
 
       <fieldset className="space-y-3 rounded-md border p-4" disabled={busy || active >= limit}>
         <legend className="px-1 text-sm font-medium">New key</legend>
+        <div>
+          <label htmlFor="key-name" className="text-sm">
+            Name <span className="text-muted-foreground">(optional)</span>
+          </label>
+          <input
+            id="key-name"
+            className="mt-1 h-11 w-full rounded-md border bg-background px-3 text-base"
+            placeholder="e.g. production, CI"
+            value={name}
+            maxLength={60}
+            autoComplete="off"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
           {SCOPES.map((s) => (
             <label key={s.id} className="flex min-h-11 items-center gap-2 text-sm">
@@ -150,10 +167,11 @@ export function KeysPanel({ projectId, initial, limit }: { projectId: string; in
           {initial.map((k) => (
             <li key={k.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="font-mono text-sm">
-                  {k.prefix}…{" "}
-                  {k.revokedAt && <span className="rounded bg-muted px-1.5 py-0.5 font-sans text-xs">revoked</span>}
+                <p className="truncate text-sm font-medium">
+                  {k.name || <span className="font-mono">{k.prefix}…</span>}{" "}
+                  {k.revokedAt && <span className="rounded bg-muted px-1.5 py-0.5 font-sans text-xs font-normal">revoked</span>}
                 </p>
+                {k.name && <p className="font-mono text-xs text-muted-foreground">{k.prefix}…</p>}
                 <p className="text-xs text-muted-foreground">
                   {k.scopes.join(", ")} · created {new Date(k.createdAt).toLocaleDateString()} ·{" "}
                   {k.lastUsedAt ? `last used ${new Date(k.lastUsedAt).toLocaleDateString()}` : "never used"}

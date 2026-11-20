@@ -57,6 +57,7 @@ export const apiKeys = pgTable(
     projectId: projectId(),
     keyHash: text("key_hash").notNull().unique(), // sha256 hex; the key itself is never stored
     prefix: text("prefix").notNull(),
+    name: text("name").notNull().default(""), // optional label chosen by the user; empty = unnamed
     scopes: text("scopes").array().notNull().default(sql`ARRAY['ingest']::text[]`),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
