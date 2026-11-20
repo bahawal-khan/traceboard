@@ -33,8 +33,9 @@ run("events schema (app_rw)", () => {
     ]);
 
   beforeAll(async () => {
-    // Earlier runs may have dropped now-expired partitions (e.g. last month after day 14). Restore them.
-    await sql`select ensure_event_partitions((date_trunc('month', now()) - interval '1 month')::date, 3)`;
+    // Earlier runs may have dropped now-expired partitions (e.g. last month after day 14), and a long gap
+    // since the last migration leaves the future ones missing. Restore previous, current and next three.
+    await sql`select ensure_event_partitions((date_trunc('month', now() at time zone 'UTC') - interval '1 month')::date, 5)`;
     await seed(A);
     await seed(B);
   });
@@ -56,6 +57,45 @@ run("events schema (app_rw)", () => {
       const [r] = await sql`select count(*)::int as n from pg_inherits i join pg_class c on c.oid = i.inhrelid where i.inhparent = 'public.events'::regclass and c.relname = ${name}`;
       expect(r.n, name).toBe(1);
     }
+  });
+
+  it("has partitions for the current UTC month and the next three (ingest never meets a missing one)", async () => {
+    const rows = await sql`select to_char(date_trunc('month', now() at time zone 'UTC') + make_interval(months => m), '"events_y"YYYY"m"MM') as name
+      from generate_series(0, 3) m`;
+    expect(rows).toHaveLength(4);
+    for (const { name } of rows) {
+      const [r] = await sql`select count(*)::int as n from pg_inherits i join pg_class c on c.oid = i.inhrelid where i.inhparent = 'public.events'::regclass and c.relname = ${name}`;
+      expect(r.n, name).toBe(1);
+    }
+  });
+
+  it("accepts events at both edges of the +/- 24h window and in the last of the next three months", async () => {
+    const edges = [new Date(Date.now() - 24 * 3600_000 + 60_000), new Date(Date.now() + 24 * 3600_000 - 60_000)];
+    const now = new Date();
+    const far = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 3, 15)); // inside month +3
+    for (const ts of [...edges, far]) {
+      const [, rows] = await scoped(A.owner, [A.project], (t) => [
+        t`insert into events (event_id, project_id, occurred_at) values (${randomUUID()}, ${A.project}, ${ts.toISOString()}) returning id`,
+      ]);
+      expect(rows, ts.toISOString()).toHaveLength(1);
+    }
+  });
+
+  it("gives app_rw exactly the privileges the ingest statement needs", async () => {
+    const priv = async (table: string, p: string) => (await sql`select has_table_privilege('app_rw', ${"public." + table}, ${p}) as ok`)[0].ok as boolean;
+    for (const t of ["events", "event_content"]) for (const p of ["SELECT", "INSERT"]) expect(await priv(t, p), `${t} ${p}`).toBe(true);
+    for (const t of ["metrics_minute", "metrics_hourly", "usage_daily", "budget_usage"]) {
+      for (const p of ["SELECT", "INSERT", "UPDATE"]) expect(await priv(t, p), `${t} ${p}`).toBe(true);
+      expect(await priv(t, "DELETE"), `${t} DELETE`).toBe(false); // cleanup is a SECURITY DEFINER function (P2.11)
+    }
+    for (const t of ["budgets", "model_prices", "projects"]) expect(await priv(t, "SELECT"), t).toBe(true);
+    const [col] = await sql`select has_column_privilege('app_rw', 'public.api_keys', 'last_used_at', 'UPDATE') as k,
+      has_column_privilege('app_rw', 'public.projects', 'last_viewed_at', 'UPDATE') as v,
+      has_column_privilege('app_rw', 'public.api_keys', 'key_hash', 'UPDATE') as h`;
+    expect(col).toEqual({ k: true, v: true, h: false });
+    const cols = await sql`select column_name from information_schema.columns where table_schema = 'public' and
+      ((table_name = 'usage_daily' and column_name = 'requests') or (table_name = 'projects' and column_name = 'last_viewed_at'))`;
+    expect(cols).toHaveLength(2);
   });
 
   it("fails closed: no scope means zero rows in every table", async () => {
@@ -160,7 +200,7 @@ run("events schema (app_rw)", () => {
       const [cur] = await sql`select to_regclass(to_char(now() at time zone 'UTC', '"public.events_y"YYYY"m"MM')) as r`;
       expect(cur.r).not.toBeNull();
       // Restore last month if the policy legitimately dropped it, so later tests and runs stay valid.
-      await sql`select ensure_event_partitions((date_trunc('month', now()) - interval '1 month')::date, 3)`;
+      await sql`select ensure_event_partitions((date_trunc('month', now() at time zone 'UTC') - interval '1 month')::date, 5)`;
     });
   });
 
