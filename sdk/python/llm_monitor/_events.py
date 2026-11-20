@@ -10,7 +10,10 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
+
+from ._hashing import hash_prompt, hash_user_id, hash_value
+from ._text import clean as _clean
 
 KINDS = ("llm", "tool", "agent", "retrieval", "custom")
 STATUSES = ("ok", "error")
@@ -20,13 +23,14 @@ MAX_TAGS = 10
 CONTENT_MAX_BYTES = 2_048
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
-_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _ISO_TS = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
 
 _ID_FIELDS = {"trace_id": 128, "span_id": 128, "parent_id": 128, "thread_id": 128}
 _INT_FIELDS = {"input_tokens": MAX_TOKENS, "output_tokens": MAX_TOKENS, "cached_tokens": MAX_TOKENS, "latency_ms": MAX_LATENCY_MS, "ttft_ms": MAX_LATENCY_MS}
 _HASH_FIELDS = ("prompt_hash", "args_hash", "user_id_hash")
+# Raw values the SDK turns into hashes and then forgets: they are never queued and never sent.
+INPUT_FIELDS = frozenset({"prompt", "args", "user_id"})
 KNOWN_FIELDS = frozenset(
     {"event_id", "ts", "kind", "name", "model", "provider", "status", "error", "tags", "content"}
     | set(_ID_FIELDS) | set(_INT_FIELDS) | set(_HASH_FIELDS)
@@ -36,11 +40,6 @@ KNOWN_FIELDS = frozenset(
 def _u16len(s: str) -> int:
     """JavaScript string length: astral characters count 2."""
     return len(s) + sum(1 for ch in s if ord(ch) > 0xFFFF)
-
-
-def _clean(s: str) -> str:
-    """Lone surrogates (invalid text) become U+FFFD, exactly one character each, as a UTF-8 round trip does in JavaScript."""
-    return _LONE_SURROGATE.sub("�", s)
 
 
 def _truncate_u16(s: str, limit: int) -> str:
@@ -126,19 +125,45 @@ def _timestamp(value: Any, now: datetime) -> str:
     return format_ts(now)
 
 
-def _content(value: Any) -> Optional[Dict[str, str]]:
+def _content(value: Any, redactor: Optional[Callable[[str], str]], report: Optional[Dict[str, int]]) -> Optional[Dict[str, str]]:
+    """Clean -> redact locally -> truncate to the byte cap. FAIL CLOSED: if the redactor raises or returns a non-str, the whole
+    content is dropped (never sent unredacted) and the failure is counted."""
     if not isinstance(value, dict):
         return None
     out: Dict[str, str] = {}
     for key in ("input", "output"):
         text = value.get(key)
-        if isinstance(text, str):
-            out[key] = _truncate_bytes(_clean(text), CONTENT_MAX_BYTES)
+        if not isinstance(text, str):
+            continue
+        text = _clean(text[: CONTENT_MAX_BYTES * 4 + 4_096])  # a cheap prefix: nothing past it can survive the byte cap
+        if redactor is not None:
+            try:
+                redacted = redactor(text)
+                if not isinstance(redacted, str):
+                    raise TypeError("a redactor must return a str")
+            except Exception:
+                if report is not None:
+                    report["redaction_errors"] = report.get("redaction_errors", 0) + 1
+                return None
+            text = _clean(redacted)
+        out[key] = _truncate_bytes(text, CONTENT_MAX_BYTES)
     return out or None
 
 
-def build_event(fields: Dict[str, Any], *, capture_content: bool = False, now: Optional[datetime] = None) -> Tuple[Dict[str, Any], int]:
-    """Returns (event, number of fields dropped or replaced). The event is always valid for the server."""
+def build_event(
+    fields: Dict[str, Any],
+    *,
+    capture_content: bool = False,
+    now: Optional[datetime] = None,
+    redactor: Optional[Callable[[str], str]] = None,
+    hash_salt: Optional[bytes] = None,
+    report: Optional[Dict[str, int]] = None,
+) -> Tuple[Dict[str, Any], int]:
+    """Returns (event, number of fields dropped or replaced). The event is always valid for the server.
+
+    `prompt`, `args` and `user_id` are RAW inputs: they are hashed into prompt_hash / args_hash / user_id_hash (an explicit
+    `*_hash` wins) and never kept. `redactor` is applied to captured content before it is truncated; `report` receives
+    counters such as "redaction_errors"."""
     now = now or datetime.now(timezone.utc)
     dropped = 0
     raw_id = fields.get("event_id")
@@ -172,7 +197,20 @@ def build_event(fields: Dict[str, Any], *, capture_content: bool = False, now: O
                 event[key] = v
     for key, limit in (("name", 200), ("error", 500)):
         if key in fields and fields[key] is not None:
-            v = _free_text(fields[key], limit)
+            raw = fields[key]
+            if key == "error" and redactor is not None and isinstance(raw, str):
+                # An error message is runtime text (exception messages often carry emails, ids and secrets) and is always sent,
+                # so it goes through the same local redaction as captured content, and fails closed the same way.
+                try:
+                    raw = redactor(_clean(raw))
+                    if not isinstance(raw, str):
+                        raise TypeError("a redactor must return a str")
+                except Exception:
+                    if report is not None:
+                        report["redaction_errors"] = report.get("redaction_errors", 0) + 1
+                    dropped += 1
+                    continue
+            v = _free_text(raw, limit)
             if v is None:
                 dropped += 1
             else:
@@ -191,6 +229,16 @@ def build_event(fields: Dict[str, Any], *, capture_content: bool = False, now: O
                 event[key] = h
             else:
                 dropped += 1
+    for out_key, in_key, hasher in (
+        ("prompt_hash", "prompt", hash_prompt),
+        ("args_hash", "args", hash_value),
+        ("user_id_hash", "user_id", lambda v: hash_user_id(v, hash_salt)),
+    ):
+        if out_key not in event and fields.get(in_key) is not None:
+            try:
+                event[out_key] = hasher(fields[in_key])
+            except Exception:  # unhashable value (NaN, a set, a non-str key, ...): the hash is simply absent
+                dropped += 1
     if "tags" in fields and fields["tags"] is not None:
         tags = fields["tags"]
         if isinstance(tags, (list, tuple)):
@@ -203,12 +251,12 @@ def build_event(fields: Dict[str, Any], *, capture_content: bool = False, now: O
             dropped += 1
     if "content" in fields and fields["content"] is not None:
         if capture_content:
-            c = _content(fields["content"])
+            c = _content(fields["content"], redactor, report)
             if c is None:
                 dropped += 1
             else:
                 event["content"] = c
         # Content capture is OPT-IN: without it the content is silently not sent (that is not an error).
 
-    dropped += sum(1 for k in fields if k not in KNOWN_FIELDS)
+    dropped += sum(1 for k in fields if k not in KNOWN_FIELDS and k not in INPUT_FIELDS)
     return event, dropped

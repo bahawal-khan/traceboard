@@ -178,3 +178,15 @@ def ok_result(events: List[Dict[str, Any]], hint: Optional[float] = None) -> Sen
 
 def fail_result(status: Optional[int], retry_after: Optional[float] = None) -> SendResult:
     return SendResult(False, status, None, retry_after, None if status is None else "http_%d" % status)
+
+
+# ---- privacy helpers (module level so they can be pickled for spawn/forkserver children) ----------------------------
+def redact_acme(text: str) -> str:
+    """A custom redactor: a picklable module-level function."""
+    return text.replace("ACME", "[company]")
+
+
+def child_track_private(mon: Any, user_id: str) -> None:
+    """A child process tracks one event with raw private inputs and flushes; the parent checks what reached the server."""
+    mon.track(name="private", user_id=user_id, prompt="the secret prompt", content={"input": "ACME mail jane@example.com", "output": "ok"})
+    sys.exit(0 if mon.flush(timeout=5) else 7)

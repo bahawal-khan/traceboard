@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import pickle
 import random
 import threading
 import time
@@ -14,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from ._config import ENV_API_KEY, USER_AGENT_PREFIX, Config, resolve_config
 from ._events import build_event
 from ._queue import BoundedQueue, Item
+from ._redact import make_redactor
 from ._transport import HttpTransport, SendResult
 
 __version__ = "0.1.0.dev0"
@@ -24,7 +26,7 @@ logger.addHandler(logging.NullHandler())
 _STAT_KEYS = (
     "events_tracked", "events_dropped_queue_full", "events_dropped_disabled", "events_dropped_closed",
     "events_sent", "events_duplicate", "events_rejected", "events_failed",
-    "batches_sent", "batches_failed", "batches_requeued", "events_expired", "fields_dropped", "errors",
+    "batches_sent", "batches_failed", "batches_requeued", "events_expired", "fields_dropped", "redaction_errors", "errors",
 )
 
 # A 5xx other than these is treated as possibly caused by one poison event (the others mean "unavailable").
@@ -68,6 +70,10 @@ class _Core(object):
         # event), doubled back towards batch_size after successes.
         self.batch_cap = cfg.batch_size
         self.rand = random.random
+        # Local redaction of captured content AND of the free-text `error` field: the user's redactor first, then the built-in
+        # rules. Content only exists with capture_content; `error` is always sent, so its redaction does not depend on capture.
+        # (redact_content=False turns the built-in rules off for both; a custom redactor then still applies.)
+        self.redactor = make_redactor(cfg.redactor, cfg.redact_content)
         self.stats: Dict[str, Any] = dict((k, 0) for k in _STAT_KEYS)
         self.stats["last_error"] = None
         self.stats["last_flush_hint_ms"] = None
@@ -400,13 +406,18 @@ class Monitor(object):
             if core.closed:
                 core.count("events_dropped_closed")
                 return None
-            event, dropped = build_event(fields, capture_content=core.cfg.capture_content)
+            report: Dict[str, int] = {}
+            event, dropped = build_event(
+                fields, capture_content=core.cfg.capture_content, redactor=core.redactor, hash_salt=core.cfg.hash_salt, report=report
+            )
             size = len(json.dumps(event, separators=(",", ":")))  # the serialised size, to split batches by bytes
             core.queue.put(Item(event, size, time.monotonic()))
             with core.lock:
                 core.stats["events_tracked"] += 1
                 if dropped:
                     core.stats["fields_dropped"] += dropped
+                if report.get("redaction_errors"):
+                    core.stats["redaction_errors"] += report["redaction_errors"]
             core.ensure_thread()
             if len(core.queue) >= core.cfg.batch_size:
                 with core.cond:
@@ -454,7 +465,19 @@ class Monitor(object):
     # ---- pickling (multiprocessing with spawn / forkserver) -------------------------------------------------------
     def __reduce__(self) -> Any:
         """A pickled Monitor arrives in the child as a FRESH Monitor with the same settings: empty queue, no thread
-        yet, default transport. (A custom transport is not carried over.) The settings include the API key."""
+        yet, default transport. (A custom transport is not carried over.) The settings include the API key and the hash salt.
+
+        A custom `redactor` MUST be picklable (a module-level function): if it is not, pickling FAILS LOUDLY instead of
+        building a child Monitor that quietly redacts less than the parent does."""
+        redactor = self._settings.get("redactor")
+        if redactor is not None:
+            try:
+                pickle.dumps(redactor)
+            except Exception as err:
+                raise pickle.PicklingError(
+                    "llm_monitor: the custom redactor cannot be pickled (%s); use a module-level function, "
+                    "or start the child with the 'fork' start method" % type(err).__name__
+                )
         return (_rebuild, (dict(self._settings),))
 
     # ---- test hooks -----------------------------------------------------------------------------------------------

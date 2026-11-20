@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import urlsplit
 
 ENV_API_KEY = "LLM_MONITOR_API_KEY"
@@ -29,7 +29,7 @@ class Config(object):
         "api_key", "base_url", "ingest_url", "batch_size", "queue_size", "flush_interval_ms",
         "min_flush_interval_ms", "max_flush_interval_ms", "timeout_s", "exit_flush_timeout_s",
         "capture_content", "allow_insecure_http", "compress", "max_batch_bytes", "retry_base_s", "retry_max_s",
-        "max_retry_after_s", "max_quota_retry_after_s", "max_event_age_s",
+        "max_retry_after_s", "max_quota_retry_after_s", "max_event_age_s", "hash_salt", "redact_content", "redactor",
     )
 
     def __init__(self, **kw: Any) -> None:
@@ -73,6 +73,9 @@ def resolve_config(
     max_retry_after_s: float = 60.0,
     max_quota_retry_after_s: float = 900.0,
     max_event_age_s: float = 3_600.0,
+    hash_salt: Any = None,
+    redact_content: bool = True,
+    redactor: Optional[Callable[[str], str]] = None,
 ) -> Tuple[Optional[Config], Optional[str]]:
     """Returns (config, None) or (None, reason). The reason never contains the API key."""
     key = api_key if api_key is not None else os.environ.get(ENV_API_KEY)
@@ -98,6 +101,18 @@ def resolve_config(
         parts.port  # noqa: B018 - raises ValueError for an invalid port
     except ValueError:
         return None, "the server URL has an invalid port"
+
+    # Privacy options are validated strictly: a wrong value must not silently weaken redaction or hashing.
+    if redactor is not None and not callable(redactor):
+        return None, "redactor must be a callable that takes and returns a str"
+    salt: Optional[bytes] = None
+    if hash_salt is not None:
+        if isinstance(hash_salt, str):
+            salt = hash_salt.encode("utf-8") or None
+        elif isinstance(hash_salt, (bytes, bytearray)):
+            salt = bytes(hash_salt) or None
+        else:
+            return None, "hash_salt must be a str or bytes"
 
     base_url = "%s://%s%s" % (parts.scheme, parts.netloc, parts.path.rstrip("/"))
     lo = _clamp(min_flush_interval_ms, 10, 60_000, 1_000)
@@ -129,6 +144,9 @@ def resolve_config(
         max_quota_retry_after_s=_clamp(max_quota_retry_after_s, retry_after_cap, 86_400, max(900.0, retry_after_cap)),
         # Events older than the server's 24 h window are refused (ts_too_old), so 23 h is the useful maximum.
         max_event_age_s=_clamp(max_event_age_s, 1, 82_800, 3_600.0),
+        hash_salt=salt,
+        redact_content=bool(redact_content),
+        redactor=redactor,
     )
     return cfg, None
 
