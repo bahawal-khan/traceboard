@@ -1,11 +1,13 @@
 import { z } from "zod";
+import { contentCipherFromEnv, prepareContent, type ContentCipher, type PreparedContent } from "@/lib/ingest/content";
 import { LATENCY_BOUNDS_MS, randomShard, ROLLUP_SHARDS } from "@/lib/ingest/rollup";
+import { RETENTION } from "@/lib/quotas";
 import type { NormalizedEvent } from "@/lib/ingest/normalize";
 import { withTenant, TenantError, type ApiKeyCtx } from "@/lib/repo/tenant";
 import { isMissingPartitionError, MissingPartitionError, type EventStore, type PersistResult } from "./store";
 
 /** Wire form of one row for `jsonb_to_recordset`. Every value is text, number or null; casts happen in SQL. */
-function toWire(e: NormalizedEvent) {
+function toWire(e: NormalizedEvent, content: PreparedContent | null) {
   return {
     event_id: e.eventId,
     trace_id: e.traceId,
@@ -29,6 +31,10 @@ function toWire(e: NormalizedEvent) {
     user_id_hash: e.userIdHash,
     tags: e.tags,
     occurred_at: e.occurredAt.toISOString(),
+    // Ciphertext only (or null). Plaintext content never leaves this process.
+    c_in: content?.input ?? null,
+    c_out: content?.output ?? null,
+    c_rep: content?.report ?? null,
   };
 }
 
@@ -39,6 +45,7 @@ function toWire(e: NormalizedEvent) {
  */
 const resultSchema = z.object({
   inserted: z.coerce.number().int().min(0),
+  content_stored: z.coerce.number().int().min(0),
   usage: z.object({ events: z.coerce.number(), requests: z.coerce.number(), cost_micro: z.coerce.number() }),
   budgets: z.array(
     z.object({
@@ -73,6 +80,11 @@ export interface PgEventStoreOptions {
   /** Delay before the single deadlock/serialization retry. Injectable for tests. */
   retryDelayMs?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Cipher for opt-in content. Default: built from CONTENT_ENCRYPTION_KEY on first use. When there is
+   * no cipher, content is NOT stored (fail closed); it is never stored unencrypted.
+   */
+  cipher?: ContentCipher | null | (() => ContentCipher | null);
 }
 
 /**
@@ -94,19 +106,29 @@ export class PgEventStore implements EventStore {
   private readonly pickShard: () => number;
   private readonly retryDelayMs: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly cipherSource: ContentCipher | null | (() => ContentCipher | null);
 
   constructor(opts: PgEventStoreOptions = {}) {
     this.pickShard = opts.pickShard ?? randomShard;
     this.retryDelayMs = opts.retryDelayMs ?? defaultRetryDelayMs;
     this.sleep = opts.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
+    this.cipherSource = opts.cipher === undefined ? contentCipherFromEnv : opts.cipher;
+  }
+
+  private cipher(): ContentCipher | null {
+    return typeof this.cipherSource === "function" ? this.cipherSource() : this.cipherSource;
   }
 
   async persist(ctx: ApiKeyCtx, events: readonly NormalizedEvent[]): Promise<PersistResult> {
     if (!ctx.scopes.includes("ingest")) throw new TenantError("persist: key lacks the ingest scope");
     const projectId = ctx.projectIds[0];
     if (ctx.projectIds.length !== 1 || !projectId) throw new TenantError("persist: an API key context has exactly one project");
-    if (events.length === 0) return { inserted: 0, usage: null, budgets: [] };
-    const payload = JSON.stringify(events.map(toWire));
+    if (events.length === 0) return { inserted: 0, contentStored: 0, usage: null, budgets: [] };
+    const hasContent = events.some((e) => e.content && (e.content.input !== undefined || e.content.output !== undefined));
+    const cipher = hasContent ? this.cipher() : null; // no key: content is dropped, never stored in clear
+    const payload = JSON.stringify(
+      events.map((e) => toWire(e, cipher ? prepareContent(cipher, projectId, e.eventId, e.content) : null)),
+    );
     const bounds = [...LATENCY_BOUNDS_MS];
     const shard = this.pickShard();
     if (!Number.isInteger(shard) || shard < 0 || shard >= ROLLUP_SHARDS) throw new Error("persist: shard out of range");
@@ -129,7 +151,14 @@ export class PgEventStore implements EventStore {
 
   private async execute(ctx: ApiKeyCtx, projectId: string, payload: string, bounds: number[], shard: number): Promise<PersistResult> {
     const [rows] = await withTenant(ctx, (t) => [
-      t`with ins as (
+      t`with src as (
+          select * from jsonb_to_recordset(${payload}::jsonb) as r(
+            event_id text, trace_id text, span_id text, parent_id text, thread_id text, kind text, name text,
+            model text, provider text, input_tokens int, output_tokens int, cached_tokens int, latency_ms int,
+            ttft_ms int, cost_usd text, status text, error text, prompt_hash text, args_hash text,
+            user_id_hash text, tags jsonb, occurred_at text, c_in text, c_out text, c_rep jsonb)
+        ),
+        ins as (
           insert into events (
             event_id, project_id, trace_id, span_id, parent_id, thread_id, kind, name, model, provider,
             input_tokens, output_tokens, cached_tokens, latency_ms, ttft_ms, cost_usd, status, error,
@@ -139,13 +168,9 @@ export class PgEventStore implements EventStore {
                  r.prompt_hash, r.args_hash, r.user_id_hash,
                  case when jsonb_typeof(r.tags) = 'array' then array(select jsonb_array_elements_text(r.tags)) else null end,
                  r.occurred_at::timestamptz
-            from jsonb_to_recordset(${payload}::jsonb) as r(
-              event_id text, trace_id text, span_id text, parent_id text, thread_id text, kind text, name text,
-              model text, provider text, input_tokens int, output_tokens int, cached_tokens int, latency_ms int,
-              ttft_ms int, cost_usd text, status text, error text, prompt_hash text, args_hash text,
-              user_id_hash text, tags jsonb, occurred_at text)
+            from src r
           on conflict (project_id, event_id, occurred_at) do nothing
-          returning occurred_at, trace_id, model, status, input_tokens, output_tokens, latency_ms,
+          returning event_id, occurred_at, trace_id, model, status, input_tokens, output_tokens, latency_ms,
                     coalesce((cost_usd * 1000000)::bigint, 0) as cost_micro
         ),
         ev as (
@@ -218,6 +243,18 @@ export class PgEventStore implements EventStore {
             cost_micro = usage_daily.cost_micro + excluded.cost_micro
           returning events, requests, cost_micro
         ),
+        c as (
+          insert into event_content (event_id, project_id, input_text, output_text, redaction_report, expires_at)
+          select distinct on (i.event_id) i.event_id, ${projectId}::uuid, s.c_in, s.c_out, s.c_rep,
+                 now() + make_interval(days => least(p.content_retention_days, ${RETENTION.contentDays}::int))
+            from ins i
+            join src s on s.event_id::uuid = i.event_id and s.occurred_at::timestamptz = i.occurred_at
+            join projects p on p.id = ${projectId}::uuid and p.capture_content
+           where s.c_in is not null or s.c_out is not null
+           order by i.event_id
+          on conflict (project_id, event_id) do nothing
+          returning 1
+        ),
         bk as (
           select k.budget_id, k.period_key, sum(k.cost_micro) as spent
             from (
@@ -242,6 +279,7 @@ export class PgEventStore implements EventStore {
           returning budget_id, period_key, spent_micro
         )
         select (select count(*) from ins)::int as inserted,
+               (select count(*) from c)::int as content_stored,
                (select to_jsonb(u) from u) as usage,
                coalesce((select jsonb_agg(jsonb_build_object(
                    'budget_id', bu.budget_id, 'scope', bg.scope, 'period', bg.period, 'limit_usd', bg.limit_usd::text,
@@ -251,6 +289,7 @@ export class PgEventStore implements EventStore {
     const r = resultSchema.parse(rows[0]);
     return {
       inserted: r.inserted,
+      contentStored: r.content_stored,
       usage: { events: r.usage.events, requests: r.usage.requests, costMicro: r.usage.cost_micro },
       budgets: r.budgets.map((b) => ({
         budgetId: b.budget_id,

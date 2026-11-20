@@ -71,6 +71,13 @@
       "when": 1795168362073,
       "tag": "0009_ingest_partitions",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795172251443,
+      "tag": "0010_event_content_project_pk",
+      "breakpoints": true
     }
   ]
 }

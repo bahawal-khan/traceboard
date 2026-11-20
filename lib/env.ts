@@ -28,6 +28,15 @@ export const envSchema = z.object({
   CRON_SECRET: z.string().min(16),
   JOB_HMAC_SECRET: z.string().min(32),
   PROVIDER_KEY_MASTER_KEY: base64Key32,
+  /**
+   * Encrypts opt-in event content at rest (lib/ingest/content.ts). Separate from the provider-key master
+   * key. Optional: without it content capture is unavailable and no content is ever stored (fail closed).
+   */
+  CONTENT_ENCRYPTION_KEY: z
+    .string()
+    .optional()
+    .transform((v) => (v === "" ? undefined : v))
+    .pipe(base64Key32.optional()),
   MAX_USERS: z.coerce.number().int().positive().default(10),
   DEMO_SOURCE: z.enum(["static", "db"]).default("static"),
   NEON_API_KEY: optionalString,
@@ -50,6 +59,11 @@ export function parseEnv(source: Record<string, string | undefined>): Env {
   if (!result.success) {
     const names = [...new Set(result.error.issues.map((i) => String(i.path[0])))];
     throw new EnvError(names);
+  }
+  // Key separation (kept out of the schema so `envSchema.pick(...)` still works): one leaked or rotated
+  // key must not expose or break the other data class.
+  if (result.data.CONTENT_ENCRYPTION_KEY && result.data.CONTENT_ENCRYPTION_KEY === result.data.PROVIDER_KEY_MASTER_KEY) {
+    throw new EnvError(["CONTENT_ENCRYPTION_KEY"]);
   }
   return result.data;
 }

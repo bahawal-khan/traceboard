@@ -34,3 +34,35 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ ...good, PROVIDER_KEY_MASTER_KEY: "dGlueQ==" })).toThrow(EnvError);
   });
 });
+
+describe("CONTENT_ENCRYPTION_KEY", () => {
+  const key = Buffer.alloc(32, 7).toString("base64");
+
+  it("is optional: absent or empty means content capture is unavailable", () => {
+    expect(parseEnv(good).CONTENT_ENCRYPTION_KEY).toBeUndefined();
+    expect(parseEnv({ ...good, CONTENT_ENCRYPTION_KEY: "" }).CONTENT_ENCRYPTION_KEY).toBeUndefined();
+  });
+
+  it("accepts a 32-byte base64 key", () => {
+    expect(parseEnv({ ...good, CONTENT_ENCRYPTION_KEY: key }).CONTENT_ENCRYPTION_KEY).toBe(key);
+  });
+
+  it("rejects a key of the wrong length or that is not base64, naming only the variable", () => {
+    for (const bad of ["dGlueQ==", Buffer.alloc(16, 1).toString("base64"), Buffer.alloc(64, 1).toString("base64"), "not base64 at all!!"]) {
+      try {
+        parseEnv({ ...good, CONTENT_ENCRYPTION_KEY: bad });
+        expect.unreachable(bad);
+      } catch (e) {
+        expect(e).toBeInstanceOf(EnvError);
+        expect((e as EnvError).variables).toEqual(["CONTENT_ENCRYPTION_KEY"]);
+        expect((e as EnvError).message).not.toContain(bad);
+      }
+    }
+  });
+
+  it("must differ from the provider-key master key (key separation)", () => {
+    expect(() => parseEnv({ ...good, CONTENT_ENCRYPTION_KEY: good.PROVIDER_KEY_MASTER_KEY })).toThrow(EnvError);
+    expect(() => parseEnv({ ...good, CONTENT_ENCRYPTION_KEY: key })).not.toThrow();
+  });
+});
+

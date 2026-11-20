@@ -15,14 +15,21 @@ const projectId = () =>
 export const eventContent = pgTable(
   "event_content",
   {
-    eventId: uuid("event_id").primaryKey(),
+    eventId: uuid("event_id").notNull(),
     projectId: projectId(),
+    /** AES-256-GCM ciphertext ("v1.<keyVersion>.<iv>.<ct>.<tag>"); never plaintext (lib/crypto.ts). */
     inputText: text("input_text"),
     outputText: text("output_text"),
     redactionReport: jsonb("redaction_report"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
-  (t) => [index("event_content_project_idx").on(t.projectId), index("event_content_expires_idx").on(t.expiresAt)],
+  (t) => [
+    // (project_id, event_id): two tenants may legitimately use the same event id; a global key on
+    // event_id alone would let one tenant's row block another's insert.
+    primaryKey({ columns: [t.projectId, t.eventId] }),
+    index("event_content_project_idx").on(t.projectId),
+    index("event_content_expires_idx").on(t.expiresAt),
+  ],
 );
 
 const n = (name: string) => integer(name).notNull().default(0);
