@@ -25,9 +25,10 @@ export function clientIp(request: Request): string | null {
 class BadBodyError extends Error {}
 
 /** Reads a small JSON body; anything oversized or malformed becomes a generic 400. */
-export async function readJson(request: Request): Promise<unknown> {
+export async function readJson(request: Request, opts: { optional?: boolean } = {}): Promise<unknown> {
   const text = await request.text();
   if (text.length > MAX_BODY_BYTES) throw new BadBodyError();
+  if (opts.optional && text.trim() === "") return {};
   try {
     return JSON.parse(text);
   } catch {

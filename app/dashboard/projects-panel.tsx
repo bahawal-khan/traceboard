@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 interface Project {
   id: string;
@@ -118,10 +119,15 @@ export function ProjectsPanel({ initial, limit }: { initial: Project[]; limit: n
               ) : (
                 <>
                   <div className="min-w-0">
-                    <p className="truncate font-medium">{p.name}</p>
+                    <Link href={`/dashboard/projects/${p.id}`} className="block truncate font-medium underline-offset-4 hover:underline">
+                      {p.name}
+                    </Link>
                     <p className="text-xs text-muted-foreground">Created {new Date(p.createdAt).toLocaleDateString()}</p>
                   </div>
                   <div className="flex gap-2">
+                    <Link href={`/dashboard/projects/${p.id}`} className={buttonVariants({ variant: "outline", className: "h-11" })}>
+                      API keys
+                    </Link>
                     <Button variant="outline" className="h-11" disabled={busy} onClick={() => setEditing({ id: p.id, name: p.name })}>
                       Rename
                     </Button>
