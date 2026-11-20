@@ -37,6 +37,11 @@ export const envSchema = z.object({
     .optional()
     .transform((v) => (v === "" ? undefined : v))
     .pipe(base64Key32.optional()),
+  /**
+   * OTLP route: keep only GenAI / OpenInference / OpenLLMetry spans and their ancestors (default true). Set to "false" to
+   * store every span (HTTP, database, ... spans from auto-instrumentation then count against the daily event quota).
+   */
+  OTLP_GENAI_ONLY: z.enum(["true", "false"]).default("true"),
   MAX_USERS: z.coerce.number().int().positive().default(10),
   DEMO_SOURCE: z.enum(["static", "db"]).default("static"),
   NEON_API_KEY: optionalString,

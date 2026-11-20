@@ -1,0 +1,65 @@
+{
+  "base_unix_nano": 1767225600000000000,
+  "generator": "scripts/gen-otlp-fixture.py",
+  "packages": {
+    "opentelemetry-exporter-otlp-proto-http": "1.45.2",
+    "opentelemetry-proto": "1.45.2",
+    "opentelemetry-sdk": "1.45.2"
+  },
+  "python": "3.14.4",
+  "request": {
+    "bytes": 1528,
+    "content_encoding": null,
+    "content_type": "application/x-protobuf",
+    "path": "/v1/traces",
+    "sha256": "710c3d55237af58b125e8b57985cefafbfb02fa6d825cc5fd023838e848579e1"
+  },
+  "service_name": "fixture-service",
+  "spans": [
+    {
+      "end_unix_nano": 1767225603100000000,
+      "name": "invoke_agent support",
+      "parent_span_id": null,
+      "span_id": "0000000000001001",
+      "start_unix_nano": 1767225600000000000,
+      "status": "UNSET",
+      "trace_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    {
+      "end_unix_nano": 1767225602900000000,
+      "name": "workflow.step",
+      "parent_span_id": "0000000000001001",
+      "span_id": "0000000000001002",
+      "start_unix_nano": 1767225600100000000,
+      "status": "UNSET",
+      "trace_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    {
+      "end_unix_nano": 1767225601050000000,
+      "name": "chat gpt-4o",
+      "parent_span_id": "0000000000001002",
+      "span_id": "0000000000001003",
+      "start_unix_nano": 1767225600200000000,
+      "status": "UNSET",
+      "trace_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    {
+      "end_unix_nano": 1767225603000000000,
+      "name": "execute_tool search",
+      "parent_span_id": "0000000000001001",
+      "span_id": "0000000000001004",
+      "start_unix_nano": 1767225602900000000,
+      "status": "ERROR",
+      "trace_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    {
+      "end_unix_nano": 1767225600055000000,
+      "name": "GET /health",
+      "parent_span_id": null,
+      "span_id": "0000000000001005",
+      "start_unix_nano": 1767225600050000000,
+      "status": "UNSET",
+      "trace_id": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+    }
+  ]
+}

@@ -32,8 +32,21 @@ export interface BodyLimits {
  * The platform limit is 4.5 MB (verified for Vercel Functions); ours is stricter.
  */
 export async function readIngestBody(request: Request, limits: BodyLimits): Promise<unknown> {
+  const { bytes } = await readBodyBytes(request, limits, ["application/json"]);
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new BodyError("malformed");
+  }
+}
+
+/**
+ * Steps 1 to 4 above for any of the allowed content types: returns the (inflated) bytes and which type matched.
+ * Parsing is the caller's job; no size is trusted before it is read.
+ */
+export async function readBodyBytes(request: Request, limits: BodyLimits, allowed: readonly string[]): Promise<{ type: string; bytes: Buffer }> {
   const type = (request.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
-  if (type !== "application/json") throw new BodyError("unsupported");
+  if (!allowed.includes(type)) throw new BodyError("unsupported");
   const encoding = (request.headers.get("content-encoding") ?? "").trim().toLowerCase();
   if (encoding !== "" && encoding !== "identity" && encoding !== "gzip") throw new BodyError("unsupported");
   const gz = encoding === "gzip";
@@ -73,9 +86,5 @@ export async function readIngestBody(request: Request, limits: BodyLimits): Prom
     }
   }
 
-  try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw));
-  } catch {
-    throw new BodyError("malformed");
-  }
+  return { type, bytes: raw };
 }

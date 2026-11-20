@@ -3,10 +3,10 @@ import { gzipSync } from "node:zlib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MissingPartitionError, type EventStore, type PersistResult } from "@/lib/events/store";
 import { PriceBook } from "@/lib/ingest/cost";
-import type { IngestDeps } from "@/lib/ingest/handler";
+
 import { UsageGate } from "@/lib/ingest/quota";
 import { createLogger } from "@/lib/logger";
-import { createOtlpTracesHandler } from "@/lib/otlp/handler";
+import { createOtlpTracesHandler, type OtlpDeps } from "@/lib/otlp/handler";
 import { eventIdForSpan } from "@/lib/otlp/ids";
 import { OTLP_LIMITS } from "@/lib/otlp/map";
 import { issueCtx, type ApiKeyCtx } from "@/lib/repo/tenant";
@@ -36,9 +36,9 @@ let logs: string[];
 let persisted: Array<{ rows: Array<Record<string, unknown>> }>;
 let afterWork: Array<() => Promise<void>>;
 let store: EventStore & { persist: ReturnType<typeof vi.fn> };
-let deps: IngestDeps;
+let deps: OtlpDeps;
 
-function build(over: Partial<IngestDeps> = {}) {
+function build(over: Partial<OtlpDeps> = {}) {
   persisted = [];
   afterWork = [];
   logs = [];
@@ -57,6 +57,7 @@ function build(over: Partial<IngestDeps> = {}) {
     afterResponse: (w) => void afterWork.push(w),
     now: () => NOW,
     random: () => 0,
+    genAiOnly: false, // these tests use plain spans; the filter has its own tests (otlp-filter.test.ts)
     log: createLogger({}, { minLevel: "debug", sink: (l) => void logs.push(l) }),
     ...over,
   };
@@ -163,10 +164,12 @@ describe("POST /api/otlp/v1/traces: request errors", () => {
     expect(await body(r)).toMatchObject({ error: "quota_exceeded" });
   });
 
-  it("protobuf is not supported yet: 415, a permanent answer OTLP clients do not retry", async () => {
+  it("other content types are 415, a permanent answer OTLP clients do not retry", async () => {
     const handler = build();
-    const r = await handler(post(new Uint8Array([10, 2, 8, 1]), { "content-type": "application/x-protobuf" }));
-    expect(r.status).toBe(415);
+    for (const type of ["text/plain", "application/protobuf", "application/grpc"]) {
+      const r = await handler(post(new Uint8Array([10, 2, 8, 1]), { "content-type": type }));
+      expect(r.status, type).toBe(415);
+    }
     expect(store.persist).not.toHaveBeenCalled();
   });
 

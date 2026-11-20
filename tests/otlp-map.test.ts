@@ -92,6 +92,14 @@ describe("cache accounting", () => {
     const e = one({ "gen_ai.provider.name": "anthropic", "gen_ai.usage.input_tokens": 50, "gen_ai.usage.cache_read.input_tokens": 1000, "gen_ai.usage.cache_creation.input_tokens": 200 });
     expect([e.input_tokens, e.cached_tokens]).toEqual([1250, 1000]);
   });
+  it("KNOWN LIMIT: Anthropic-style input with cache_read <= input is indistinguishable from OTel-style, so the total is under-counted", () => {
+    // An instrumentor that reports Anthropic's raw numbers (input EXCLUDES cache): 1000 fresh + 800 cache read = 1800 real input.
+    // The mapper cannot tell, reads 1000 as the total and 800 as a subset of it. Only cached > input exposes the Anthropic style.
+    const e = one({ "gen_ai.provider.name": "anthropic", "gen_ai.usage.input_tokens": 1000, "gen_ai.usage.cache_read.input_tokens": 800, "gen_ai.usage.cache_creation.input_tokens": 100 });
+    expect([e.input_tokens, e.cached_tokens]).toEqual([1000, 800]); // the real total would be 1900; cost is therefore under-stated
+    // ... and the same numbers with cache_read just above input ARE detected:
+    expect(one({ "gen_ai.usage.input_tokens": 1000, "gen_ai.usage.cache_read.input_tokens": 1001 }).input_tokens).toBe(2001);
+  });
   it("older cache attribute names are understood", () => {
     expect(one({ "gen_ai.usage.input_tokens": 100, "gen_ai.usage.cache_read_input_tokens": 40 }).cached_tokens).toBe(40);
   });
@@ -187,7 +195,7 @@ describe("robustness", () => {
     expect(r.rejected.over_limit).toBe(8);
   });
   it("a request with no spans maps to nothing", () => {
-    expect(mapOtlpTraces(otlpTraceRequest.parse({}))).toEqual({ events: [], rejected: { over_limit: 0, bad_ids: 0, bad_time: 0, invalid: 0 } });
+    expect(mapOtlpTraces(otlpTraceRequest.parse({}))).toEqual({ events: [], filtered: 0, rejected: { over_limit: 0, bad_ids: 0, bad_time: 0, invalid: 0 } });
     expect(mapOtlpTraces(otlpTraceRequest.parse({ resourceSpans: [{ scopeSpans: [{}] }, {}] })).events).toEqual([]);
   });
   it("every mapped event is valid for the strict ingest schema", () => {
