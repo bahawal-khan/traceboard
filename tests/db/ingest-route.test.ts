@@ -20,6 +20,7 @@ import { ctxFromApiKey, ctxFromSession } from "@/lib/repo/ctx";
 import { createProject } from "@/lib/repo/projects";
 import { loadModelPrices } from "@/lib/repo/prices";
 import { readUsageToday } from "@/lib/repo/usage";
+import { ensureEventPartitions } from "./helpers/job-role";
 
 /** POST /api/ingest end to end against the real database as app_rw. Skipped without DATABASE_URL. */
 const url = process.env.DATABASE_URL;
@@ -79,7 +80,7 @@ run("ingest route (database)", () => {
   const count = async (t: Tenant, table = "events") => ((await q(t, `select count(*)::int as n from ${table}`))[0]!.n as number);
 
   beforeAll(async () => {
-    await sql`select ensure_event_partitions((date_trunc('month', now() at time zone 'UTC') - interval '1 month')::date, 5)`;
+    await ensureEventPartitions();
   });
   afterAll(async () => {
     for (const u of users) await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);

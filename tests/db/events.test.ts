@@ -1,6 +1,7 @@
 import { neon, type NeonQueryFunctionInTransaction, type NeonQueryInTransaction } from "@neondatabase/serverless";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ensureEventPartitions, jobSql } from "./helpers/job-role";
 
 /** events (partitioned), rollups, content: RLS, grants, partitions, idempotency. As app_rw; skipped without DATABASE_URL. */
 const url = process.env.DATABASE_URL;
@@ -35,7 +36,7 @@ run("events schema (app_rw)", () => {
   beforeAll(async () => {
     // Earlier runs may have dropped now-expired partitions (e.g. last month after day 14), and a long gap
     // since the last migration leaves the future ones missing. Restore previous, current and next three.
-    await sql`select ensure_event_partitions((date_trunc('month', now() at time zone 'UTC') - interval '1 month')::date, 5)`;
+    await ensureEventPartitions();
     await seed(A);
     await seed(B);
   });
@@ -160,20 +161,21 @@ run("events schema (app_rw)", () => {
     }
   });
 
-  describe("partition management functions", () => {
+  describe("partition management functions (job role: app_rw may not call them)", () => {
+    const job = jobSql();
     it("ensure_event_partitions is idempotent and validates input", async () => {
-      const [r1] = await sql`select ensure_event_partitions((date_trunc('month', now()) - interval '1 month')::date, 3) as n`;
+      const [r1] = await job`select ensure_event_partitions((date_trunc('month', now()) - interval '1 month')::date, 3) as n`;
       expect(r1.n).toBe(0);
-      await expect(sql`select ensure_event_partitions('1999-01-01', 1)`).rejects.toThrow(/out of range/i);
-      await expect(sql`select ensure_event_partitions(current_date, 0)`).rejects.toThrow(/months must be/i);
-      await expect(sql`select ensure_event_partitions(current_date, 25)`).rejects.toThrow(/months must be/i);
+      await expect(job`select ensure_event_partitions('1999-01-01', 1)`).rejects.toThrow(/out of range/i);
+      await expect(job`select ensure_event_partitions(current_date, 0)`).rejects.toThrow(/months must be/i);
+      await expect(job`select ensure_event_partitions(current_date, 25)`).rejects.toThrow(/months must be/i);
     });
 
     it("drop_old_event_partitions takes no argument, so a caller cannot choose the retention", async () => {
       const procs = await sql`select pronargs::int as n from pg_proc where proname = 'drop_old_event_partitions' and pronamespace = 'public'::regnamespace`;
       expect(procs).toEqual([{ n: 0 }]);
-      await expect(sql`select drop_old_event_partitions(0)`).rejects.toThrow(/does not exist/i);
-      await expect(sql`select drop_old_event_partitions(1)`).rejects.toThrow(/does not exist/i);
+      await expect(job`select drop_old_event_partitions(0)`).rejects.toThrow(/does not exist/i);
+      await expect(job`select drop_old_event_partitions(1)`).rejects.toThrow(/does not exist/i);
     });
 
     it("drop_old_event_partitions drops partitions past the 14-day cutoff and never a newer one", async () => {
@@ -184,9 +186,9 @@ run("events schema (app_rw)", () => {
           and substring(pg_get_expr(c.relpartbound, c.oid) from 'TO \\(''([^'']+)''\\)')::timestamptz > now() - interval '14 days'`;
       expect(protectedBefore.length).toBeGreaterThanOrEqual(2); // current + next month at least
 
-      const [made] = await sql`select ensure_event_partitions('2001-01-01', 1) as n`;
+      const [made] = await job`select ensure_event_partitions('2001-01-01', 1) as n`;
       expect(made.n).toBe(1);
-      const [d] = await sql`select drop_old_event_partitions() as n`;
+      const [d] = await job`select drop_old_event_partitions() as n`;
       expect(d.n).toBeGreaterThanOrEqual(1);
       const [old] = await sql`select to_regclass('public.events_y2001m01') as r`;
       expect(old.r).toBeNull();
@@ -196,11 +198,11 @@ run("events schema (app_rw)", () => {
         expect(r.r, `${relname} must survive`).not.toBeNull();
       }
       // Calling it again is a no-op for protected partitions.
-      await sql`select drop_old_event_partitions()`;
+      await job`select drop_old_event_partitions()`;
       const [cur] = await sql`select to_regclass(to_char(now() at time zone 'UTC', '"public.events_y"YYYY"m"MM')) as r`;
       expect(cur.r).not.toBeNull();
       // Restore last month if the policy legitimately dropped it, so later tests and runs stay valid.
-      await sql`select ensure_event_partitions((date_trunc('month', now() at time zone 'UTC') - interval '1 month')::date, 5)`;
+      await ensureEventPartitions();
     });
   });
 

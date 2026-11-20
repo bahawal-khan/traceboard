@@ -80,6 +80,8 @@ export const usageDaily = pgTable(
     /** Ingest requests (Vercel invocations are the scarcest free-tier resource). */
     requests: big("requests"),
     costMicro: big("cost_micro"),
+    /** Content rows stored today (UTC); the ingest statement enforces QUOTAS.contentRowsPerDayPerProject with it (P2.11c). */
+    contentRows: big("content_rows"),
   },
   (t) => [primaryKey({ columns: [t.projectId, t.day] })],
 );

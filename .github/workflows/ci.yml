@@ -53,11 +53,15 @@ jobs:
         run: |
           APP_PW=$(openssl rand -hex 24)
           MIG_PW=$(openssl rand -hex 24)
+          JOB_PW=$(openssl rand -hex 24)
           echo "::add-mask::$APP_PW"
           echo "::add-mask::$MIG_PW"
+          echo "::add-mask::$JOB_PW"
           {
             echo "APP_RW_PASSWORD=$APP_PW"
             echo "MIGRATOR_PASSWORD=$MIG_PW"
+            echo "APP_JOB_PASSWORD=$JOB_PW"
+            echo "JOB_DATABASE_URL=postgres://app_job:$JOB_PW@db.localtest.me:5432/main"
             echo "ADMIN_DATABASE_URL=postgres://postgres:postgres@db.localtest.me:5432/main"
             echo "DATABASE_URL=postgres://app_rw:$APP_PW@db.localtest.me:5432/main"
             echo "MIGRATION_DATABASE_URL=postgres://migrator:$MIG_PW@db.localtest.me:5432/main"

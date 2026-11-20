@@ -11,6 +11,7 @@ import type { NormalizedEvent } from "@/lib/ingest/normalize";
 import { createApiKey } from "@/lib/repo/api-keys";
 import { ctxFromApiKey, ctxFromSession } from "@/lib/repo/ctx";
 import { createProject } from "@/lib/repo/projects";
+import { ensureEventPartitions } from "./helpers/job-role";
 
 /**
  * Write-time rollups, usage and budgets, all computed from the rows the insert actually produced.
@@ -69,7 +70,7 @@ run("event rollups (database)", () => {
   });
 
   beforeAll(async () => {
-    await sql`select ensure_event_partitions((date_trunc('month', now() at time zone 'UTC') - interval '1 month')::date, 5)`;
+    await ensureEventPartitions();
   });
   afterAll(async () => {
     for (const u of users) await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);
