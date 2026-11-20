@@ -1,4 +1,5 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import { configureLocalNeon } from "@/db/neon-local.mjs";
 import { envSchema } from "@/lib/env";
 
 /**
@@ -13,6 +14,10 @@ const dbEnv = envSchema.pick({ DATABASE_URL: true });
 let sql: NeonQueryFunction<false, false> | undefined;
 
 export function getSql(): NeonQueryFunction<false, false> {
-  sql ??= neon(dbEnv.parse(process.env).DATABASE_URL);
+  if (!sql) {
+    const { DATABASE_URL } = dbEnv.parse(process.env);
+    configureLocalNeon(DATABASE_URL); // no-op unless the host is the local CI/dev proxy
+    sql = neon(DATABASE_URL);
+  }
   return sql;
 }

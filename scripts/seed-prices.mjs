@@ -3,6 +3,7 @@
 // Runs as the `migrator` role (MIGRATION_DATABASE_URL, direct host): app_rw has no write access to
 // model_prices on purpose. Upsert only; models absent from the file are left untouched.
 import { neon } from "@neondatabase/serverless";
+import { configureLocalNeon } from "../db/neon-local.mjs";
 import { loadModelPrices } from "../db/seed/model-prices.schema.mjs";
 
 try {
@@ -17,6 +18,7 @@ if (!process.env.MIGRATION_DATABASE_URL) {
 }
 
 const file = loadModelPrices(); // throws (naming the bad field) on invalid data, before any write
+configureLocalNeon(process.env.MIGRATION_DATABASE_URL); // CI / local proxy only
 const sql = neon(process.env.MIGRATION_DATABASE_URL);
 
 const upsert = (m) =>
