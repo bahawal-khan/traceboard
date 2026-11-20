@@ -4,7 +4,9 @@
 # The db.localtest.me host must resolve to 127.0.0.1 (public DNS does; CI also adds a hosts entry).
 services:
   postgres:
-    image: postgres:16
+    # Pinned to a minor version (verified on Docker Hub 2026-11-19). To bump: pick a newer 16.x tag from
+    # https://hub.docker.com/_/postgres/tags , change it here, and let the db-tests job run.
+    image: postgres:16.16
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres # ephemeral CI container only
@@ -18,10 +20,14 @@ services:
       retries: 20
 
   neon-proxy:
-    # Third-party community image (CC0), only a moving `main` tag is published. Pin it by digest once you have
-    # looked at it:   docker buildx imagetools inspect ghcr.io/timowilhelm/local-neon-http-proxy:main
-    # then use      image: ghcr.io/timowilhelm/local-neon-http-proxy@sha256:<digest>
-    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    # Third-party community image (CC0) that only publishes a moving `main` tag, so it is pinned by digest.
+    #
+    # RE-VERIFY / BUMP (do this on purpose, not automatically; the image is rebuilt on every push upstream):
+    #   docker buildx imagetools inspect ghcr.io/timowilhelm/local-neon-http-proxy:main   # shows the current digest
+    #   Read the upstream changes (https://github.com/TimoWilhelm/local-neon-http-proxy/commits/main), put the new
+    #   digest here, and confirm the db-tests job is green. Dependabot does not track this file.
+    # Pinned on 2026-11-20 from the digest printed by the db-tests job.
+    image: ghcr.io/timowilhelm/local-neon-http-proxy@sha256:cd2ae14edf2feafbc3330492de5c80506f77274c3bd013154cdef697bdeb768a
     environment:
       PG_CONNECTION_STRING: postgres://postgres:postgres@postgres:5432/main
     ports:
