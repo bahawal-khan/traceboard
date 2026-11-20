@@ -69,7 +69,7 @@ describe("request id", () => {
 describe("quotas", () => {
   it("matches the documented free-tier defaults", () => {
     expect(QUOTAS.ingestRequestsPerDayPerProject).toBe(3_000);
-    expect(QUOTAS.eventsPerDayPerProject).toBe(10_000);
+    expect(QUOTAS.eventsPerDayPerProject).toBe(1_900); // derived from the measured row size, see tests/quotas-capacity.test.ts
     expect(QUOTAS.projectsPerUser).toBe(2);
     expect(QUOTAS.keysPerProject).toBe(5);
   });

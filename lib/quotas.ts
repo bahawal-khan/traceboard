@@ -1,10 +1,17 @@
 /**
  * Free-tier quota constants (Vercel Hobby + Neon Free). A paid plan only
- * raises these numbers. Recompute the event/storage figures after the P2
- * row-size measurement (docs/DATA_MODEL.md section 6, docs/DEPLOYMENT.md).
+ * raises these numbers. The events/day figure is DERIVED from SIZING with lib/capacity.ts
+ * (tests/quotas-capacity.test.ts fails if they drift apart); see docs/DEPLOYMENT.md "Storage budget".
  */
 export const QUOTAS = {
-  eventsPerDayPerProject: 10_000,
+  /** 1,900 = floor to 100 of 600 MB / (1,050 B x 15 days x 20 projects) = 1,904. Derived from SIZING. */
+  eventsPerDayPerProject: 1_900,
+  /**
+   * Cap on stored (encrypted) content rows per project per day: 200 x 8,200 B x 4 days x 20 projects = 131 MB, 13% of
+   * the database at the MAXIMUM row size (2 KB in + 2 KB out), inside SIZING.contentShare (15%). NOT ENFORCED YET:
+   * the ingest statement must count and cap it (P2.11); until then do not offer content capture beyond the owner.
+   */
+  contentRowsPerDayPerProject: 200,
   ingestRequestsPerDayPerProject: 3_000,
   projectsPerUser: 2,
   keysPerProject: 5,
@@ -65,5 +72,28 @@ export const FLUSH_HINT_MS = {
 
 /** Database-size guard thresholds as a fraction of the 1 GB Neon Free cap. */
 export const STORAGE_GUARD = { warnAt: 0.7, pauseSignupsAt: 0.85 } as const;
+
+/**
+ * Inputs of the storage math behind `QUOTAS.eventsPerDayPerProject` and `contentRowsPerDayPerProject`
+ * (lib/capacity.ts). tests/quotas-capacity.test.ts ties them to db/measurements/event-row-size.json.
+ *
+ * RULE: a row size is the LARGER measured profile mean (heap + toast + every index) times 1.25 safety margin, rounded up.
+ *  - `eventRowBytes`: heavy profile mean 839.7 B (measured 2026-11-20: lean 561.2, heavy 839.7; spread under 1%,
+ *    no warnings) x 1.25 = 1,049.6 -> 1,050.
+ *  - `contentRowBytes`: maximum-size encrypted content row 6,537.2 B x 1.25 = 8,171.5 -> 8,200.
+ * `eventWindowDays` is 14 retention days + 1 day of purge lag, valid once P2.11 deletes expired rows inside live monthly
+ * partitions (owner decision (b)); with whole-partition drops only, the real window is up to 45 days. `contentWindowDays`
+ * is the 3-day content retention + 1 day of purge lag. The project count uses the default MAX_USERS: raising MAX_USERS
+ * means lowering these quotas.
+ */
+export const SIZING = {
+  databaseBytes: 1_000_000_000,
+  eventsShare: 0.6,
+  eventRowBytes: 1_050,
+  eventWindowDays: 15,
+  contentShare: 0.15,
+  contentRowBytes: 8_200,
+  contentWindowDays: 4,
+} as const;
 
 export type Quotas = typeof QUOTAS;
