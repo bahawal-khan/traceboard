@@ -22,18 +22,12 @@ services:
   neon-proxy:
     # Third-party community image (CC0) that only publishes a moving `main` tag, so it is pinned by digest.
     #
-    # PIN_PENDING: until the digest below is filled in, the image is the moving `main` tag. To pin it:
-    #   1. Open the latest db-tests run in GitHub Actions -> job "db-tests" -> step
-    #      "Print resolved image digests (temporary)" (also on the run's Summary page).
-    #   2. Copy the line `ghcr.io/timowilhelm/local-neon-http-proxy@sha256:<64 hex>`.
-    #   3. Replace the image line below with it, delete this PIN_PENDING paragraph, and delete the temporary
-    #      step from .github/workflows/ci.yml (tests/ci-pins.test.ts fails until both are done).
-    #
-    # RE-VERIFY / BUMP LATER (do this on purpose, not automatically; the image is rebuilt on every push upstream):
+    # RE-VERIFY / BUMP (do this on purpose, not automatically; the image is rebuilt on every push upstream):
     #   docker buildx imagetools inspect ghcr.io/timowilhelm/local-neon-http-proxy:main   # shows the current digest
     #   Read the upstream changes (https://github.com/TimoWilhelm/local-neon-http-proxy/commits/main), put the new
     #   digest here, and confirm the db-tests job is green. Dependabot does not track this file.
-    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    # Pinned on 2026-11-20 from the digest printed by the db-tests job.
+    image: ghcr.io/timowilhelm/local-neon-http-proxy@sha256:cd2ae14edf2feafbc3330492de5c80506f77274c3bd013154cdef697bdeb768a
     environment:
       PG_CONNECTION_STRING: postgres://postgres:postgres@postgres:5432/main
     ports:
