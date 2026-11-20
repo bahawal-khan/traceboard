@@ -1,8 +1,10 @@
 """The Monitor: a bounded in-memory queue, a background flush thread, a flush at exit. Never raises into the host app."""
 from __future__ import annotations
 
+import json
 import logging
 import os
+import random
 import threading
 import time
 import warnings
@@ -11,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from ._config import ENV_API_KEY, USER_AGENT_PREFIX, Config, resolve_config
 from ._events import build_event
-from ._queue import BoundedQueue
+from ._queue import BoundedQueue, Item
 from ._transport import HttpTransport, SendResult
 
 __version__ = "0.1.0.dev0"
@@ -22,8 +24,13 @@ logger.addHandler(logging.NullHandler())
 _STAT_KEYS = (
     "events_tracked", "events_dropped_queue_full", "events_dropped_disabled", "events_dropped_closed",
     "events_sent", "events_duplicate", "events_rejected", "events_failed",
-    "batches_sent", "batches_failed", "fields_dropped", "errors",
+    "batches_sent", "batches_failed", "batches_requeued", "events_expired", "fields_dropped", "errors",
 )
+
+# A 5xx other than these is treated as possibly caused by one poison event (the others mean "unavailable").
+_UNAVAILABLE = (502, 503, 504)
+_MAX_POISON_ATTEMPTS = 5
+_AUTH_STATUSES = (401, 403)
 
 
 class _Core(object):
@@ -31,6 +38,12 @@ class _Core(object):
 
     A forked child gets a brand-new core (`fresh()`), so it never shares the parent's queue and starts its own flush
     thread. The thread only references the core, never the Monitor, so a Monitor that is garbage collected can stop it.
+
+    Delivery model (P2.7b): a batch that could not be delivered for a TRANSIENT reason (network error, timeout, 408, 429,
+    5xx) goes back to the FRONT of the bounded queue and is retried after an exponential backoff with jitter, never
+    earlier than a (capped) Retry-After. Nothing waits inside a retry loop, so `track()` and `shutdown()` stay prompt.
+    A batch that failed for a PERMANENT reason (other 4xx, 3xx) is dropped and counted: resending it cannot succeed.
+    Memory is bounded by the queue size; staleness is bounded by `max_event_age_s`.
     """
 
     def __init__(self, cfg: Config, transport: Any) -> None:
@@ -44,8 +57,17 @@ class _Core(object):
         self.thread: Optional[threading.Thread] = None
         self.stopping = False
         self.closed = False
-        # Current flush interval; P2.7b will update it from the server's flush_hint_ms (clamped to the configured range).
+        # Current flush interval: starts at the configured value and follows the server's flush_hint_ms, clamped to
+        # [min_flush_interval_ms, max_flush_interval_ms].
         self.interval_ms = cfg.flush_interval_ms
+        self.last_flush = time.monotonic()
+        # Retry state. `retry_at` is a time.monotonic() value: nothing is sent by the background thread before it.
+        self.retry_at = 0.0
+        self.consecutive_failures = 0
+        # Adaptive batch size: halved when the server refuses a batch as too large or fails on it (isolating a poison
+        # event), doubled back towards batch_size after successes.
+        self.batch_cap = cfg.batch_size
+        self.rand = random.random
         self.stats: Dict[str, Any] = dict((k, 0) for k in _STAT_KEYS)
         self.stats["last_error"] = None
         self.stats["last_flush_hint_ms"] = None
@@ -70,6 +92,7 @@ class _Core(object):
                 return
             if self.thread is not None and self.thread.is_alive():
                 return
+            self.last_flush = time.monotonic()  # the first event waits one full interval, so events are batched
             thread = threading.Thread(target=_run, args=(self,), name="llm-monitor-flush", daemon=True)
             try:
                 thread.start()
@@ -82,9 +105,23 @@ class _Core(object):
         t = self.thread
         return t is not None and t.is_alive()
 
+    # ---- backoff --------------------------------------------------------------------------------------------------
+    def backoff_delay(self, failures: int, retry_after: Optional[float], retry_after_cap: Optional[float] = None) -> float:
+        """Seconds to wait before the next attempt after `failures` consecutive failures: exponential, capped, with "equal
+        jitter" (half fixed, half random) so many SDKs recovering from one outage do not return in lockstep, and never
+        shorter than the server's Retry-After, itself capped at `retry_after_cap` (default: max_retry_after_s)."""
+        ceiling = min(self.cfg.retry_max_s, self.cfg.retry_base_s * (2 ** min(max(failures, 1) - 1, 30)))
+        delay = ceiling / 2.0 + self.rand() * ceiling / 2.0
+        if retry_after is not None and retry_after > 0:
+            cap = self.cfg.max_retry_after_s if retry_after_cap is None else retry_after_cap
+            delay = max(delay, min(retry_after, cap))
+        return delay
+
     # ---- sending --------------------------------------------------------------------------------------------------
-    def send_all(self, deadline: Optional[float]) -> bool:
-        """Sends queued events in batches until the queue is empty or the deadline passes. True if the queue is empty."""
+    def send_all(self, deadline: Optional[float], respect_gate: bool) -> bool:
+        """Sends queued events in batches until the queue is empty, the deadline passes, or a send fails transiently
+        (then it stops: no hammering a struggling server; the backoff gate decides when to try again).
+        `respect_gate=False` is for an explicit flush() / shutdown(): one attempt now. True if the queue is empty."""
         timeout = -1 if deadline is None else max(0.0, deadline - time.monotonic())
         if not self.send_lock.acquire(timeout=timeout):
             return False
@@ -92,39 +129,101 @@ class _Core(object):
             while True:
                 if deadline is not None and time.monotonic() >= deadline:
                     return len(self.queue) == 0
-                batch = self.queue.take(self.cfg.batch_size)
-                if not batch:
+                if respect_gate and time.monotonic() < self.retry_at:
+                    return len(self.queue) == 0
+                outcome = self._send_once()
+                if outcome == "empty":
                     return True
-                self.send_batch(batch)
+                if outcome == "retry":
+                    return False
         finally:
             self.send_lock.release()
 
-    def send_batch(self, batch: List[Dict[str, Any]]) -> None:
+    def _send_once(self) -> str:
+        """Takes one batch and tries to deliver it. Returns "empty", "ok", "dropped", "split" or "retry"."""
+        batch, expired = self.queue.take_batch(self.batch_cap, self.cfg.max_batch_bytes, time.monotonic(), self.cfg.max_event_age_s)
+        if expired:
+            self.count("events_expired", expired)
+        if not batch:
+            return "empty"
         try:
-            result = self.transport.send(batch)
+            result = self.transport.send([it.event for it in batch])
         except Exception as err:
             result = SendResult(False, None, None, None, "error:" + type(err).__name__)
+        if result.ok:
+            self._on_success(batch, result)
+            return "ok"
+        return self._on_failure(batch, result)
+
+    def _on_success(self, batch: List[Item], result: SendResult) -> None:
+        body = result.body or {}
+        accepted = body.get("accepted")
+        rejected = body.get("rejected")
+        duplicates = body.get("duplicates")
+        n_rej = len(rejected) if isinstance(rejected, list) else 0
+        n_dup = duplicates if isinstance(duplicates, int) and not isinstance(duplicates, bool) else 0
+        n_acc = accepted if isinstance(accepted, int) and not isinstance(accepted, bool) else len(batch) - n_rej
+        hint = body.get("flush_hint_ms")
+        with self.cond:
+            self.stats["batches_sent"] += 1
+            self.stats["events_sent"] += max(0, n_acc - n_dup)
+            self.stats["events_duplicate"] += n_dup
+            self.stats["events_rejected"] += n_rej
+            self.consecutive_failures = 0
+            self.retry_at = 0.0
+            self.batch_cap = min(self.cfg.batch_size, self.batch_cap * 2)
+            if isinstance(hint, (int, float)) and not isinstance(hint, bool) and hint == hint and hint > 0:  # NaN, 0 and negatives are ignored
+                self.stats["last_flush_hint_ms"] = hint
+                self.interval_ms = max(self.cfg.min_flush_interval_ms, min(self.cfg.max_flush_interval_ms, float(hint)))
+                self.cond.notify_all()  # the thread may be waiting on the old interval: let it recompute
+
+    def _on_failure(self, batch: List[Item], result: SendResult) -> str:
+        status = result.status
+        permanent = status is not None and (300 <= status < 400 or (400 <= status < 500 and status not in (408, 429)))
+        # ONLY a 429 whose body says quota_exceeded gets the larger Retry-After cap; a missing or malformed body, or any
+        # other status or error code, keeps the normal cap.
+        body = result.body
+        quota = status == 429 and isinstance(body, dict) and body.get("error") == "quota_exceeded"
         with self.lock:
-            if result.ok:
-                body = result.body or {}
-                accepted = body.get("accepted")
-                rejected = body.get("rejected")
-                duplicates = body.get("duplicates")
-                n_rej = len(rejected) if isinstance(rejected, list) else 0
-                n_dup = duplicates if isinstance(duplicates, int) and not isinstance(duplicates, bool) else 0
-                n_acc = accepted if isinstance(accepted, int) and not isinstance(accepted, bool) else len(batch) - n_rej
-                self.stats["batches_sent"] += 1
-                self.stats["events_sent"] += max(0, n_acc - n_dup)
-                self.stats["events_duplicate"] += n_dup
-                self.stats["events_rejected"] += n_rej
-                hint = body.get("flush_hint_ms")
-                if isinstance(hint, (int, float)) and not isinstance(hint, bool):
-                    self.stats["last_flush_hint_ms"] = hint
+            self.stats["batches_failed"] += 1
+            self.stats["last_error"] = "quota_exceeded" if quota else result.error
+
+        if status == 413 and len(batch) > 1:
+            # Too large for the server: halve and retry at once (this should not happen with byte-based splitting).
+            self.batch_cap = max(1, len(batch) // 2)
+            self.queue.requeue_front(batch)
+            self.count("batches_requeued")
+            return "split"
+        if permanent:
+            # Resending the same bytes cannot help: drop and count. Rejected credentials also pause sending for a while.
+            self.count("events_failed", len(batch))
+            if status in _AUTH_STATUSES:
+                with self.lock:
+                    self.retry_at = time.monotonic() + self.cfg.retry_max_s
+                logger.warning("llm_monitor: the server refused the API key (HTTP %s); events are dropped until it is fixed", status)
+            return "dropped"
+
+        if status is not None and status >= 500 and status not in _UNAVAILABLE:
+            # The server failed on THIS payload (a plain 500 is not "unavailable"): isolate a poison event by halving the
+            # batch on every failure, and give up on a single event after a few attempts so it cannot block the queue.
+            if len(batch) > 1:
+                self.batch_cap = max(1, len(batch) // 2)
             else:
-                # P2.7a: one attempt, then the batch is dropped and counted. P2.7b adds bounded retries.
-                self.stats["batches_failed"] += 1
-                self.stats["events_failed"] += len(batch)
-                self.stats["last_error"] = result.error
+                batch[0].attempts += 1
+                if batch[0].attempts >= _MAX_POISON_ATTEMPTS:
+                    self.count("events_failed")
+                    return "dropped"
+
+        dropped = self.queue.requeue_front(batch)
+        with self.lock:
+            self.stats["batches_requeued"] += 1
+            self.consecutive_failures += 1
+            self.retry_at = time.monotonic() + self.backoff_delay(
+                self.consecutive_failures, result.retry_after_s, self.cfg.max_quota_retry_after_s if quota else None
+            )
+        if dropped:
+            logger.debug("llm_monitor: queue full while retrying, %d oldest events dropped", dropped)
+        return "retry"
 
     def shutdown(self, timeout: float) -> None:
         deadline = time.monotonic() + max(0.0, timeout)
@@ -137,27 +236,33 @@ class _Core(object):
         t = self.thread
         if t is not None and t is not threading.current_thread() and t.is_alive():
             t.join(max(0.0, deadline - time.monotonic()))
-        self.send_all(deadline)
+        self.send_all(deadline, respect_gate=False)
 
 
 def _run(core: _Core) -> None:
-    """The flush thread: wake when a batch is full or the interval has passed, then send everything queued."""
+    """The flush thread: wake when a batch is full or the interval has passed, then send what is queued. It never sends
+    before the retry gate opens (a failed send closes it for a backoff period), and it re-reads the interval on every
+    wake-up, so a new flush_hint_ms takes effect immediately."""
     while True:
         with core.cond:
-            deadline = time.monotonic() + core.interval_ms / 1000.0
             while not core.stopping:
+                now = time.monotonic()
                 if len(core.queue) >= core.cfg.batch_size:
-                    break
-                remaining = deadline - time.monotonic()
+                    due = now  # a full batch goes at once...
+                else:
+                    due = core.last_flush + core.interval_ms / 1000.0
+                due = max(due, core.retry_at)  # ...but never before the backoff allows
+                remaining = due - now
                 if remaining <= 0:
                     break
                 core.cond.wait(remaining)
             if core.stopping:
                 return
         try:
-            core.send_all(None)
+            core.send_all(None, respect_gate=True)
         except Exception:  # the thread must survive anything
             core.count("errors")
+        core.last_flush = time.monotonic()
 
 
 class _Holder(object):
@@ -248,7 +353,7 @@ class Monitor(object):
             _announce_disabled(self.config_error)
             return
         if transport is None:
-            transport = HttpTransport(cfg.ingest_url, cfg.api_key, cfg.timeout_s, "%s/%s" % (USER_AGENT_PREFIX, __version__))
+            transport = HttpTransport(cfg.ingest_url, cfg.api_key, cfg.timeout_s, "%s/%s" % (USER_AGENT_PREFIX, __version__), cfg.compress)
         self._holder = _Holder(_Core(cfg, transport))
         _HOLDERS.add(self._holder)
         self._finalizer = weakref.finalize(self, _finalize, self._holder)
@@ -267,6 +372,9 @@ class Monitor(object):
             core = self._holder.get()
             with core.lock:
                 snap = dict(core.stats)
+            snap["consecutive_failures"] = core.consecutive_failures
+            snap["interval_ms"] = core.interval_ms
+            snap["batch_cap"] = core.batch_cap
             snap["queue_size"] = len(core.queue)
             snap["events_dropped_queue_full"] = core.queue.dropped
             snap["enabled"] = True
@@ -293,7 +401,8 @@ class Monitor(object):
                 core.count("events_dropped_closed")
                 return None
             event, dropped = build_event(fields, capture_content=core.cfg.capture_content)
-            core.queue.put(event)
+            size = len(json.dumps(event, separators=(",", ":")))  # the serialised size, to split batches by bytes
+            core.queue.put(Item(event, size, time.monotonic()))
             with core.lock:
                 core.stats["events_tracked"] += 1
                 if dropped:
@@ -318,7 +427,7 @@ class Monitor(object):
             if self._holder is None:
                 return True
             core = self._holder.get()
-            return core.send_all(time.monotonic() + max(0.0, float(timeout)))
+            return core.send_all(time.monotonic() + max(0.0, float(timeout)), respect_gate=False)
         except Exception:
             return False
 

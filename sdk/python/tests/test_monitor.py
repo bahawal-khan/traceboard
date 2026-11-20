@@ -204,14 +204,14 @@ class TestBackpressure(unittest.TestCase):
 
 
 class TestFailuresNeverReachTheHostApp(unittest.TestCase):
-    def test_a_failing_transport_is_counted_and_the_next_batch_still_goes(self):
-        fake = FakeTransport(ok=False)
+    def test_a_permanent_failure_drops_the_batch_and_the_next_batch_still_goes(self):
+        fake = FakeTransport(ok=False, status=400)
         mon = make(fake, batch_size=2)
         mon.track(name="a")
         mon.track(name="b")
         self.assertTrue(wait_until(lambda: mon.stats["batches_failed"] == 1))
         s = mon.stats
-        self.assertEqual((s["events_failed"], s["last_error"], s["batches_sent"]), (2, "http_503", 0))
+        self.assertEqual((s["events_failed"], s["last_error"], s["batches_sent"], s["queue_size"]), (2, "http_400", 0, 0))
         fake.ok = True
         mon.track(name="c")
         mon.track(name="d")
@@ -219,16 +219,28 @@ class TestFailuresNeverReachTheHostApp(unittest.TestCase):
         self.assertEqual(mon.stats["events_sent"], 2)
         mon.shutdown()
 
+    def test_a_transient_failure_keeps_the_events_and_delivers_them_after_a_backoff(self):
+        fake = FakeTransport(ok=False, status=503)
+        mon = make(fake, batch_size=2, retry_base_s=0.05, retry_max_s=0.1)
+        mon.track(name="a")
+        mon.track(name="b")
+        self.assertTrue(wait_until(lambda: mon.stats["batches_requeued"] >= 1))
+        self.assertEqual(mon.stats["events_failed"], 0)  # nothing was thrown away
+        fake.ok = True
+        self.assertTrue(wait_until(lambda: mon.stats["events_sent"] == 2, 5))
+        self.assertEqual([e["name"] for e in fake.all_events()][-2:], ["a", "b"])
+        self.assertEqual(mon.stats["consecutive_failures"], 0)
+        mon.shutdown()
+
     def test_a_raising_transport_is_swallowed_and_the_thread_survives(self):
         fake = FakeTransport(raises=RuntimeError("boom with secret " + API_KEY))
-        mon = make(fake, batch_size=1)
+        mon = make(fake, batch_size=1, retry_base_s=0.02, retry_max_s=0.05)
         mon.track(name="a")
-        self.assertTrue(wait_until(lambda: mon.stats["batches_failed"] == 1))
+        self.assertTrue(wait_until(lambda: mon.stats["batches_failed"] >= 1))
         self.assertNotIn(API_KEY, repr(mon.stats))  # the error is recorded by class, never by message
         self.assertTrue(mon._thread_alive())
         fake.raises = None
-        mon.track(name="b")
-        self.assertTrue(wait_until(lambda: mon.stats["batches_sent"] == 1))
+        self.assertTrue(wait_until(lambda: mon.stats["batches_sent"] == 1, 5))  # the event was kept and is delivered
         mon.shutdown()
 
     def test_track_never_raises_whatever_it_is_given(self):

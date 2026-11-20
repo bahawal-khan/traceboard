@@ -4,6 +4,7 @@ The child entry points live here (a normal importable module) so multiprocessing
 can import them by name in the child process."""
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import sys
@@ -30,7 +31,7 @@ class IngestServer(object):
     """A real HTTP server on 127.0.0.1 that records every request and answers like /api/ingest (or as configured)."""
 
     def __init__(self, status: int = 202, body: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None,
-                 delay: float = 0.0, handler: Optional[Callable[[Dict[str, Any]], Any]] = None) -> None:
+                 delay: float = 0.0, handler: Optional[Callable[[Dict[str, Any]], Any]] = None, port: int = 0) -> None:
         self.requests: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
         outer = self
@@ -40,12 +41,19 @@ class IngestServer(object):
 
             def do_POST(self) -> None:  # noqa: N802
                 length = int(self.headers.get("Content-Length") or 0)
-                raw = self.rfile.read(length)
+                wire = self.rfile.read(length)
+                raw = wire
+                if (self.headers.get("Content-Encoding") or "").lower() == "gzip":
+                    try:
+                        raw = gzip.decompress(wire)
+                    except (OSError, EOFError):
+                        raw = b""
                 try:
                     parsed = json.loads(raw.decode("utf-8"))
                 except ValueError:
                     parsed = None
-                record = {"path": self.path, "headers": dict((k.lower(), v) for k, v in self.headers.items()), "body": parsed, "raw": raw, "pid": os.getpid()}
+                record = {"path": self.path, "headers": dict((k.lower(), v) for k, v in self.headers.items()), "body": parsed, "raw": raw,
+                          "wire_bytes": len(wire), "pid": os.getpid(), "at": time.monotonic()}
                 with outer._lock:
                     outer.requests.append(record)
                 if delay:
@@ -68,7 +76,7 @@ class IngestServer(object):
             def log_message(self, *args: Any) -> None:
                 pass
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
         self._server.daemon_threads = True
         self._thread = threading.Thread(target=self._server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
 
@@ -95,8 +103,9 @@ class IngestServer(object):
 class FakeTransport(object):
     """Records batches; optionally fails, raises or blocks."""
 
-    def __init__(self, ok: bool = True, raises: Optional[BaseException] = None, delay: float = 0.0) -> None:
+    def __init__(self, ok: bool = True, raises: Optional[BaseException] = None, delay: float = 0.0, status: int = 503) -> None:
         self.batches: List[List[Dict[str, Any]]] = []
+        self.status = status
         self.ok = ok
         self.raises = raises
         self.delay = delay
@@ -113,7 +122,7 @@ class FakeTransport(object):
         if self.raises is not None:
             raise self.raises
         if not self.ok:
-            return SendResult(False, 503, None, None, "http_503")
+            return SendResult(False, self.status, None, None, "http_%d" % self.status)
         return SendResult(True, 202, {"accepted": len(events), "duplicates": 0, "rejected": [], "flush_hint_ms": 10000}, None, None)
 
     def all_events(self) -> List[Dict[str, Any]]:
@@ -139,3 +148,33 @@ def child_background_delivery(mon: Any, marker: str, wait_s: float) -> None:
     mon.track(name=marker, kind="custom")
     delivered = wait_until(lambda: mon.stats["batches_sent"] >= 1 and mon._queue_len() == 0, wait_s)
     sys.exit(0 if delivered and mon._thread_alive() else 6)
+
+
+class ScriptedTransport(object):
+    """A transport whose answer is a function of the batch, so a test can model server behaviour precisely."""
+
+    def __init__(self, respond: Callable[[List[Dict[str, Any]]], SendResult]) -> None:
+        self.respond = respond
+        self.batches: List[List[Dict[str, Any]]] = []
+        self._lock = threading.Lock()
+
+    def send(self, events: List[Dict[str, Any]]) -> SendResult:
+        with self._lock:
+            self.batches.append(list(events))
+        return self.respond(events)
+
+    def delivered(self) -> List[Dict[str, Any]]:
+        """Events of the batches that were answered with success."""
+        with self._lock:
+            return [e for b in self.batches if self.respond(b).ok for e in b]
+
+
+def ok_result(events: List[Dict[str, Any]], hint: Optional[float] = None) -> SendResult:
+    body: Dict[str, Any] = {"accepted": len(events), "duplicates": 0, "rejected": []}
+    if hint is not None:
+        body["flush_hint_ms"] = hint
+    return SendResult(True, 202, body, None, None)
+
+
+def fail_result(status: Optional[int], retry_after: Optional[float] = None) -> SendResult:
+    return SendResult(False, status, None, retry_after, None if status is None else "http_%d" % status)
