@@ -1,9 +1,10 @@
 import { generateApiKey } from "@/lib/api-key";
-import { QUOTAS } from "@/lib/quotas";
+import { QUOTAS, RATE_LIMITS } from "@/lib/quotas";
+import { TtlCache } from "@/lib/ttl-cache";
 import { projectId } from "@/lib/validation/projects";
 import { createApiKeyInput, keyId } from "@/lib/validation/api-keys";
 import { LimitReachedError, NotFoundError } from "./errors";
-import { withTenant, type SessionCtx } from "./tenant";
+import { withTenant, type ApiKeyCtx, type SessionCtx } from "./tenant";
 
 /** Everything the dashboard may know about a key. The secret and the hash never appear here. */
 export interface ApiKeyMeta {
@@ -123,4 +124,36 @@ export async function revokeApiKey(ctx: SessionCtx, project: string, key: string
       select (select count(*)::int from k) as found`,
   ]);
   if (!rows[0] || rows[0].found === 0) throw new NotFoundError();
+}
+
+/** Keys written recently by THIS instance; the SQL condition below is the cross-instance throttle. */
+const recentlyTouched = new TtlCache<true>(RATE_LIMITS.authCacheMaxEntries, RATE_LIMITS.lastUsedWriteIntervalMs);
+
+/**
+ * Stamps api_keys.last_used_at, at most once per minute per key (in memory first, then in SQL so
+ * several instances do not all write). Never throws: a failed stamp must not fail an ingest request,
+ * and it is retried on the next request. Returns false on failure so the caller can log it (this file
+ * must not log; see tests/api-key-gen.test.ts). The caller should run it after the response (`after()`).
+ * The key can only touch itself: the update runs under its own project scope (RLS) and matches its id.
+ */
+export async function touchApiKey(ctx: ApiKeyCtx): Promise<boolean> {
+  if (recentlyTouched.get(ctx.keyId)) return true;
+  recentlyTouched.set(ctx.keyId, true);
+  const seconds = Math.round(RATE_LIMITS.lastUsedWriteIntervalMs / 1000);
+  try {
+    await withTenant(ctx, (t) => [
+      t`update api_keys set last_used_at = now()
+        where id = ${ctx.keyId} and revoked_at is null
+          and (last_used_at is null or last_used_at < now() - (${seconds}::int * interval '1 second'))`,
+    ]);
+    return true;
+  } catch {
+    recentlyTouched.delete(ctx.keyId);
+    return false;
+  }
+}
+
+/** Test helper: forget the in-memory throttle. */
+export function resetTouchThrottleForTests(): void {
+  recentlyTouched.clear();
 }

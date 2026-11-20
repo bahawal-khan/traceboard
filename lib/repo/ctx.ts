@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { getSql } from "@/lib/db/client";
 import { hashApiKey, looksLikeApiKey } from "@/lib/api-key";
+import { retryOnConnectionError } from "@/lib/errors/connection";
 import { issueCtx, runScoped, type ApiKeyCtx, type DemoCtx, type SessionCtx } from "./tenant";
 
 /** Owner id of the synthetic demo project. Clerk user ids never look like this. */
@@ -24,10 +25,15 @@ export async function ctxFromSession(): Promise<SessionCtx | null> {
   });
 }
 
-/** Raw API key -> context for its one project. null for malformed, unknown or revoked keys. */
+/**
+ * Raw API key -> context for its one project. null for malformed, unknown or revoked keys.
+ * Uncached; request handlers go through `ApiKeyAuthenticator` (lib/api-key-auth.ts).
+ */
 export async function ctxFromApiKey(rawKey: string | null | undefined): Promise<ApiKeyCtx | null> {
   if (!rawKey || !looksLikeApiKey(rawKey)) return null;
-  const rows = await getSql()`select project_id, key_id, scopes from lookup_key(${hashApiKey(rawKey)})`;
+  // Ingest hot path: one retry on a connection-level failure (never on SQL errors). Safe to repeat: read-only.
+  const hash = hashApiKey(rawKey);
+  const rows = await retryOnConnectionError(() => getSql()`select project_id, key_id, scopes from lookup_key(${hash})`);
   const row = rows[0];
   if (!row) return null;
   return issueCtx<ApiKeyCtx>({

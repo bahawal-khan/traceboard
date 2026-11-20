@@ -1,5 +1,5 @@
-import { isIP } from "node:net";
 import { ZodError } from "zod";
+import { clientIp } from "@/lib/http/ip";
 import { isConnectionError } from "@/lib/errors/connection";
 import { logger, type Logger } from "@/lib/logger";
 import { requestIdFrom, REQUEST_ID_HEADER } from "@/lib/request-id";
@@ -17,11 +17,7 @@ export function json(body: unknown, status: number, requestId?: string, extraHea
   });
 }
 
-/** First hop of x-forwarded-for if it is a valid IP (for the audit log); otherwise null. */
-export function clientIp(request: Request): string | null {
-  const first = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return first && isIP(first) ? first : null;
-}
+export { clientIp };
 
 class BadBodyError extends Error {}
 
