@@ -1,0 +1,312 @@
+{
+  "_comment": "USD per 1M tokens. Short-context Standard-tier list prices; longContext is kept for cost code (P2) and is NOT stored in model_prices. cachedInputPer1m is the cache READ price. Cache write prices are not modelled. Re-verify against the source pages before changing.",
+  "sources": {
+    "openai": {
+      "url": "https://developers.openai.com/api/docs/pricing",
+      "verifiedOn": "2026-11-20"
+    },
+    "anthropic": {
+      "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "verifiedOn": "2026-11-20"
+    },
+    "google": {
+      "url": "https://aistudio.google.com/docs/pricing",
+      "verifiedOn": "2026-11-20"
+    }
+  },
+  "models": [
+    {
+      "model": "claude-fable-5-2",
+      "provider": "anthropic",
+      "inputPer1m": "8.00",
+      "cachedInputPer1m": "0.20",
+      "outputPer1m": "40.00"
+    },
+    {
+      "model": "claude-opus-5-5",
+      "provider": "anthropic",
+      "inputPer1m": "4.00",
+      "cachedInputPer1m": "0.20",
+      "outputPer1m": "20.00"
+    },
+    {
+      "model": "claude-sonnet-5-5",
+      "provider": "anthropic",
+      "inputPer1m": "2.00",
+      "cachedInputPer1m": "0.10",
+      "outputPer1m": "10.00"
+    },
+    {
+      "model": "claude-haiku-5-5",
+      "provider": "anthropic",
+      "inputPer1m": "0.10",
+      "cachedInputPer1m": "0.01",
+      "outputPer1m": "0.50",
+      "longContext": {
+        "thresholdTokens": 100000,
+        "inputPer1m": "0.50",
+        "cachedInputPer1m": "0.05",
+        "outputPer1m": "2.50"
+      }
+    },
+    {
+      "model": "gpt-6.2-astra",
+      "provider": "openai",
+      "inputPer1m": "8.00",
+      "cachedInputPer1m": "0.40",
+      "outputPer1m": "40.00",
+      "longContext": {
+        "thresholdTokens": 272000,
+        "inputPer1m": "16.00",
+        "cachedInputPer1m": "0.80",
+        "outputPer1m": "60.00"
+      }
+    },
+    {
+      "model": "gpt-6.2-sol",
+      "provider": "openai",
+      "inputPer1m": "2.00",
+      "cachedInputPer1m": "0.10",
+      "outputPer1m": "10.00",
+      "longContext": {
+        "thresholdTokens": 272000,
+        "inputPer1m": "4.00",
+        "cachedInputPer1m": "0.20",
+        "outputPer1m": "15.00"
+      }
+    },
+    {
+      "model": "gpt-6.1-terra",
+      "provider": "openai",
+      "inputPer1m": "1.00",
+      "cachedInputPer1m": "0.05",
+      "outputPer1m": "5.00",
+      "longContext": {
+        "thresholdTokens": 272000,
+        "inputPer1m": "2.00",
+        "cachedInputPer1m": "0.10",
+        "outputPer1m": "7.50"
+      }
+    },
+    {
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "inputPer1m": "0.10",
+      "cachedInputPer1m": "0.01",
+      "outputPer1m": "0.50",
+      "longContext": {
+        "thresholdTokens": 272000,
+        "inputPer1m": "0.20",
+        "cachedInputPer1m": "0.02",
+        "outputPer1m": "0.75"
+      }
+    },
+    {
+      "model": "gpt-6-sol",
+      "provider": "openai",
+      "inputPer1m": "2.00",
+      "cachedInputPer1m": "0.20",
+      "outputPer1m": "10.00",
+      "longContext": {
+        "thresholdTokens": 272000,
+        "inputPer1m": "4.00",
+        "cachedInputPer1m": "0.40",
+        "outputPer1m": "15.00"
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "provider": "openai",
+      "inputPer1m": "2.00",
+      "cachedInputPer1m": "0.20",
+      "outputPer1m": "12.00",
+      "longContext": {
+        "thresholdTokens": 272000,
+        "inputPer1m": "4.00",
+        "cachedInputPer1m": "0.40",
+        "outputPer1m": "18.00"
+      }
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "provider": "openai",
+      "inputPer1m": "0.20",
+      "cachedInputPer1m": "0.02",
+      "outputPer1m": "1.20",
+      "longContext": {
+        "thresholdTokens": 272000,
+        "inputPer1m": "0.40",
+        "cachedInputPer1m": "0.04",
+        "outputPer1m": "1.80"
+      }
+    },
+    {
+      "model": "gpt-5.5",
+      "provider": "openai",
+      "inputPer1m": "5.00",
+      "cachedInputPer1m": "0.50",
+      "outputPer1m": "30.00",
+      "longContext": {
+        "thresholdTokens": 272000,
+        "inputPer1m": "10.00",
+        "cachedInputPer1m": "1.00",
+        "outputPer1m": "45.00"
+      }
+    },
+    {
+      "model": "gpt-5.4",
+      "provider": "openai",
+      "inputPer1m": "2.50",
+      "cachedInputPer1m": "0.25",
+      "outputPer1m": "15.00",
+      "longContext": {
+        "thresholdTokens": 272000,
+        "inputPer1m": "5.00",
+        "cachedInputPer1m": "0.50",
+        "outputPer1m": "22.50"
+      }
+    },
+    {
+      "model": "gpt-5.4-mini",
+      "provider": "openai",
+      "inputPer1m": "0.75",
+      "cachedInputPer1m": "0.075",
+      "outputPer1m": "4.50"
+    },
+    {
+      "model": "gpt-5.4-nano",
+      "provider": "openai",
+      "inputPer1m": "0.20",
+      "cachedInputPer1m": "0.02",
+      "outputPer1m": "1.25"
+    },
+    {
+      "model": "gpt-5-mini",
+      "provider": "openai",
+      "inputPer1m": "0.25",
+      "cachedInputPer1m": "0.025",
+      "outputPer1m": "2.00"
+    },
+    {
+      "model": "gpt-5-nano",
+      "provider": "openai",
+      "inputPer1m": "0.05",
+      "cachedInputPer1m": "0.005",
+      "outputPer1m": "0.40"
+    },
+    {
+      "model": "gpt-4.1",
+      "provider": "openai",
+      "inputPer1m": "2.00",
+      "cachedInputPer1m": "0.50",
+      "outputPer1m": "8.00"
+    },
+    {
+      "model": "gpt-4.1-mini",
+      "provider": "openai",
+      "inputPer1m": "0.40",
+      "cachedInputPer1m": "0.10",
+      "outputPer1m": "1.60"
+    },
+    {
+      "model": "gpt-4o",
+      "provider": "openai",
+      "inputPer1m": "2.50",
+      "cachedInputPer1m": "1.25",
+      "outputPer1m": "10.00"
+    },
+    {
+      "model": "gpt-4o-mini",
+      "provider": "openai",
+      "inputPer1m": "0.15",
+      "cachedInputPer1m": "0.075",
+      "outputPer1m": "0.60"
+    },
+    {
+      "model": "o3",
+      "provider": "openai",
+      "inputPer1m": "2.00",
+      "cachedInputPer1m": "0.50",
+      "outputPer1m": "8.00"
+    },
+    {
+      "model": "gemini-4-neon",
+      "provider": "google",
+      "inputPer1m": "3.00",
+      "cachedInputPer1m": "0.15",
+      "outputPer1m": "15.00"
+    },
+    {
+      "model": "gemini-4-hydrogen",
+      "provider": "google",
+      "inputPer1m": "1.50",
+      "cachedInputPer1m": "0.075",
+      "outputPer1m": "7.50"
+    },
+    {
+      "model": "gemini-3.5-flash-lite",
+      "provider": "google",
+      "inputPer1m": "0.30",
+      "cachedInputPer1m": "0.03",
+      "outputPer1m": "2.50"
+    },
+    {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "google",
+      "inputPer1m": "0.25",
+      "cachedInputPer1m": "0.025",
+      "outputPer1m": "1.50"
+    },
+    {
+      "model": "gemini-3.1-pro-preview",
+      "provider": "google",
+      "inputPer1m": "2.00",
+      "cachedInputPer1m": "0.20",
+      "outputPer1m": "12.00",
+      "longContext": {
+        "thresholdTokens": 200000,
+        "inputPer1m": "4.00",
+        "cachedInputPer1m": "0.40",
+        "outputPer1m": "18.00"
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "model": "gpt-5.6-sol",
+      "reason": "promotional price until 2026-11-30; page does not say which values are promotional"
+    },
+    {
+      "model": "gemini-4-carbon",
+      "reason": "price changes on 2026-12-01"
+    },
+    {
+      "model": "gemini-4-argon",
+      "reason": "price changes on 2026-12-01"
+    },
+    {
+      "model": "gemini-3.8-flash",
+      "reason": "price changes on 2027-01-01"
+    },
+    {
+      "model": "gemini-3.6-flash",
+      "reason": "price changes on 2027-01-01"
+    },
+    {
+      "model": "claude-opus-5",
+      "reason": "older Claude generation; add on demand"
+    },
+    {
+      "model": "claude-sonnet-4-6",
+      "reason": "older Claude generation; add on demand"
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "reason": "older Claude generation; add on demand"
+    },
+    {
+      "model": "*-pro (OpenAI)",
+      "reason": "no cached-input price listed; not needed for judges or replay yet"
+    }
+  ]
+}
