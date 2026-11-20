@@ -1,8 +1,9 @@
 import { ZodError } from "zod";
 import { clientIp } from "@/lib/http/ip";
+import { json } from "@/lib/http/respond";
 import { isConnectionError } from "@/lib/errors/connection";
 import { logger, type Logger } from "@/lib/logger";
-import { requestIdFrom, REQUEST_ID_HEADER } from "@/lib/request-id";
+import { requestIdFrom } from "@/lib/request-id";
 import { isSameOrigin, SAFE_METHODS } from "@/lib/security/origin";
 import { LimitReachedError, NotFoundError } from "@/lib/repo/errors";
 import { ctxFromSession } from "@/lib/repo/ctx";
@@ -10,12 +11,7 @@ import type { SessionCtx } from "@/lib/repo/tenant";
 
 const MAX_BODY_BYTES = 8 * 1024;
 
-export function json(body: unknown, status: number, requestId?: string, extraHeaders: Record<string, string> = {}): Response {
-  return Response.json(body, {
-    status,
-    headers: { "Cache-Control": "private, no-store", ...extraHeaders, ...(requestId ? { [REQUEST_ID_HEADER]: requestId } : {}) },
-  });
-}
+export { json };
 
 export { clientIp };
 

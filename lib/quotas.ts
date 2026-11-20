@@ -50,6 +50,19 @@ export const RATE_LIMITS = {
   lastUsedWriteIntervalMs: 60_000,
 } as const;
 
+/**
+ * `flush_hint_ms` returned by ingest (docs/ARCHITECTURE.md section 2). The SDK clamps it to its own 1-60 s
+ * range. `live` applies while a dashboard viewer is watching the project (`projects.last_viewed_at` newer
+ * than `liveWindowMs`); `conserve` wins over everything (app_state `conserve` flag).
+ */
+export const FLUSH_HINT_MS = {
+  live: 1_000,
+  idleMin: 10_000,
+  idleMax: 15_000,
+  conserve: 60_000,
+  liveWindow: 15_000,
+} as const;
+
 /** Database-size guard thresholds as a fraction of the 1 GB Neon Free cap. */
 export const STORAGE_GUARD = { warnAt: 0.7, pauseSignupsAt: 0.85 } as const;
 
