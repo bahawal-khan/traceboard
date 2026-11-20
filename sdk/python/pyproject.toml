@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# The PyPI name and the license are decided in Phase 8 (docs/PHASES.md); "llm-monitor" is a placeholder.
+name = "llm-monitor"
+version = "0.1.0.dev0"
+description = "Python SDK for the LLM Monitor observability and evaluation platform."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []   # standard library only, on purpose (docs/ARCHITECTURE.md section 4)
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+# The test suite is plain unittest (standard library); pytest is only a nicer runner for it.
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["llm_monitor*"]
+
+[tool.setuptools.package-data]
+llm_monitor = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
