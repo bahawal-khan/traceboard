@@ -49,6 +49,22 @@ jobs:
           echo "127.0.0.1 db.localtest.me" | sudo tee -a /etc/hosts
           docker compose -f ci/docker-compose.db.yml up -d --wait
 
+      # TEMPORARY (P1.10b): shows which image digests were actually pulled, so the proxy image can be pinned by
+      # digest in ci/docker-compose.db.yml. Delete this step once the digest is pinned.
+      - name: Print resolved image digests (temporary)
+        run: |
+          {
+            echo "### Resolved image digests"
+            echo '```'
+            for img in postgres:16.16 ghcr.io/timowilhelm/local-neon-http-proxy:main; do
+              echo "== $img"
+              docker image inspect "$img" --format '{{range .RepoDigests}}{{println .}}{{end}}'
+            done
+            echo "== buildx imagetools (index digest)"
+            docker buildx imagetools inspect ghcr.io/timowilhelm/local-neon-http-proxy:main | grep -E '^(Name|Digest):' || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Generate run-only credentials
         run: |
           APP_PW=$(openssl rand -hex 24)
