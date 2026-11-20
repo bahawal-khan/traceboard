@@ -1,5 +1,6 @@
 import type { PriceBook } from "./cost";
 import { microToUsdString } from "./cost";
+import { redactText } from "./redact";
 import type { IngestEvent } from "./validate";
 
 /**
@@ -44,6 +45,26 @@ export type NormalizedEvent = {
 };
 
 export type NormalizeResult = { accepted: NormalizedEvent[]; rejected: RejectedEvent[] };
+
+/** Same bounds as the Python SDK: the redaction patterns are quadratic on long digit runs, so the input is capped first. */
+export const ERROR_MAX_CHARS = 500;
+export const ERROR_REDACT_INPUT_CHARS = 4_096;
+
+/**
+ * The free-text error (usually an exception message) is redacted before it is stored, whichever client
+ * sent it. Order: cap the input, redact, THEN cut to 500 (a secret cut in half by the limit must not
+ * survive as a prefix). Pure and deterministic, so a retried event is stored identically.
+ */
+export function sanitizeError(error: string | undefined): string | null {
+  if (error === undefined) return null;
+  let out = redactText(error.slice(0, ERROR_REDACT_INPUT_CHARS)).text;
+  if (out.length > ERROR_MAX_CHARS) {
+    out = out.slice(0, ERROR_MAX_CHARS);
+    const last = out.charCodeAt(out.length - 1);
+    if (last >= 0xd800 && last <= 0xdbff) out = out.slice(0, -1); // never end on half a surrogate pair
+  }
+  return out;
+}
 
 /** Null when `ts` is inside the window, else the reason. The window edges are inclusive. */
 export function checkTs(ts: Date, now: number): RejectReason | null {
@@ -91,7 +112,7 @@ export function normalizeEvents(events: readonly IngestEvent[], prices: PriceBoo
       costMicro: micro,
       costUsd: micro === null ? null : microToUsdString(micro),
       status: e.status,
-      error: e.error ?? null,
+      error: sanitizeError(e.error),
       promptHash: e.prompt_hash ?? null,
       argsHash: e.args_hash ?? null,
       userIdHash: e.user_id_hash ?? null,
