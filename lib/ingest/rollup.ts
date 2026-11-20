@@ -9,7 +9,11 @@
 export const LATENCY_BOUNDS_MS = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600, 51200] as const;
 export const LATENCY_BUCKETS = LATENCY_BOUNDS_MS.length + 1; // 12
 
-/** Hot `(project, minute, model)` rows are spread over this many shard rows; readers sum them. */
+/**
+ * Hot `(project, minute, model)` rows in `metrics_minute` are spread over this many shard rows. `metrics_hourly` is NOT
+ * sharded: it is always written with shard 0 (P2.6b). The column stays, so readers must still SUM over `shard` for both
+ * tables (older hourly rows may carry shards 1-7).
+ */
 export const ROLLUP_SHARDS = 8;
 
 export const randomShard = (): number => Math.floor(Math.random() * ROLLUP_SHARDS);

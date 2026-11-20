@@ -57,5 +57,13 @@ export function minuteRollupWorstCaseBytes(i: { requestsPerDay: number; modelsPe
   return Math.ceil(rows * i.bytesPerRow);
 }
 
+/**
+ * Worst-case hourly-rollup bytes per project over `days`: one row per (hour, model, shard). Hourly rows are written with
+ * ONE shard (shards = 1), so this is days x 24 x models x row size; with 8 shards it was 8x larger (29% of the database).
+ */
+export function hourlyRollupWorstCaseBytes(i: { days: number; modelsPerProject: number; shards: number; bytesPerRow: number }): number {
+  return Math.ceil(i.days * 24 * i.modelsPerProject * i.shards * i.bytesPerRow);
+}
+
 /** Share of the database used by a given number of bytes. */
 export const share = (bytes: number, databaseBytes: number): number => bytes / databaseBytes;
