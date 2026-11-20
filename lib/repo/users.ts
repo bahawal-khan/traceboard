@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { getSql } from "@/lib/db/client";
 import { envSchema } from "@/lib/env";
+import { retryOnConnectionError } from "@/lib/errors/connection";
 
 export type SlotStatus = "signed_out" | "existing" | "created" | "full";
 
@@ -16,7 +17,8 @@ export async function ensureSignedInUserSlot(): Promise<SlotStatus> {
   const { userId } = await auth();
   if (!userId) return "signed_out";
   const { MAX_USERS } = capEnv.parse(process.env);
-  const rows = await getSql()`select claim_user_slot(${userId}, ${MAX_USERS}) as status`;
+  // claim_user_slot is idempotent per user, so one retry after a connection failure is safe.
+  const rows = await retryOnConnectionError(() => getSql()`select claim_user_slot(${userId}, ${MAX_USERS}) as status`);
   const status = rows[0]?.status;
   if (status !== "existing" && status !== "created" && status !== "full") throw new Error("unexpected claim_user_slot result");
   return status;

@@ -55,7 +55,9 @@ run("api keys", () => {
     new Request(`${ORIGIN}${path}`, { method, headers: { origin: ORIGIN, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
   const params = (id: string, keyId = "") => ({ params: Promise.resolve({ id, keyId }) });
 
-  beforeEach(() => signIn(null));
+  beforeEach(() => {
+    signIn(null);
+  });
   afterAll(async () => {
     for (const u of users) await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);
   });

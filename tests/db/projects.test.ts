@@ -45,7 +45,9 @@ run("projects repo and routes", () => {
     });
   const idParams = (id: string) => ({ params: Promise.resolve({ id }) });
 
-  beforeEach(() => signIn(null));
+  beforeEach(() => {
+    signIn(null);
+  });
 
   afterAll(async () => {
     for (const u of users) {

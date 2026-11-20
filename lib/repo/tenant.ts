@@ -1,6 +1,7 @@
 import type { NeonQueryFunctionInTransaction, NeonQueryInTransaction } from "@neondatabase/serverless";
 import { z } from "zod";
 import { getSql } from "@/lib/db/client";
+import { retryOnConnectionError } from "@/lib/errors/connection";
 
 /**
  * Tenant context + withTenant(): the only door to tenant data.
@@ -72,16 +73,20 @@ export async function runScoped(
   build: (t: Tx) => NeonQueryInTransaction[],
 ) {
   const sql = getSql();
-  const results = await sql.transaction(
-    (t) => {
-      const queries = build(t);
-      if (!Array.isArray(queries)) throw new TenantError("withTenant: build() must synchronously return an array of queries");
-      return [
-        t`select set_config('app.owner_id', ${scope.ownerId ?? ""}, true), set_config('app.project_ids', ${scope.projectIds.join(",")}, true)`,
-        ...queries,
-      ];
-    },
-    { readOnly: scope.readOnly },
+  // One retry, connection-level failures only (never SQL errors): build() only creates query objects, so
+  // running the transaction twice is safe; see retryOnConnectionError for the lost-response caveat.
+  const results = await retryOnConnectionError(() =>
+    sql.transaction(
+      (t) => {
+        const queries = build(t);
+        if (!Array.isArray(queries)) throw new TenantError("withTenant: build() must synchronously return an array of queries");
+        return [
+          t`select set_config('app.owner_id', ${scope.ownerId ?? ""}, true), set_config('app.project_ids', ${scope.projectIds.join(",")}, true)`,
+          ...queries,
+        ];
+      },
+      { readOnly: scope.readOnly },
+    ),
   );
   return results.slice(1);
 }

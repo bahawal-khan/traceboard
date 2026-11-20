@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NeonDbError } from "@neondatabase/serverless";
 import { LimitReachedError, NotFoundError } from "@/lib/repo/errors";
 
 const m = vi.hoisted(() => ({
@@ -124,6 +125,25 @@ describe("dashboard project routes (mocked repo)", () => {
     expect(text).not.toContain("secretpw");
     expect(text).not.toContain("postgres");
     expect(JSON.parse(text).error).toBe("internal");
+  });
+
+  it("503 with the request id (and no details) when the database cannot be reached; SQL errors stay 500", async () => {
+    const down = new NeonDbError("Error connecting to database: TypeError: fetch failed postgres://user:secretpw@host/db");
+    down.sourceError = new TypeError("fetch failed");
+    m.listProjects.mockRejectedValue(down);
+    const r = await list(req("GET", "/api/dashboard/projects", { headers: { "x-request-id": "req-12345678" } }));
+    expect(r.status).toBe(503);
+    expect(r.headers.get("retry-after")).toBe("5");
+    expect(r.headers.get("x-request-id")).toBe("req-12345678");
+    expect(r.headers.get("cache-control")).toBe("private, no-store");
+    const text = await r.text();
+    expect(JSON.parse(text)).toEqual({ error: "service_unavailable", requestId: "req-12345678" });
+    expect(text).not.toMatch(/secretpw|postgres|fetch/);
+
+    const sqlErr = new NeonDbError("permission denied");
+    sqlErr.code = "42501";
+    m.listProjects.mockRejectedValue(sqlErr);
+    expect((await list(req("GET", "/api/dashboard/projects"))).status).toBe(500);
   });
 
   it("422 for a non-uuid project id", async () => {
