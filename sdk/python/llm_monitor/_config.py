@@ -16,6 +16,10 @@ _API_KEY = re.compile(r"[A-Za-z0-9_-]{43}")
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 MAX_BATCH = 100  # server limit (docs/ARCHITECTURE.md section 2)
+# The server caps a body at 256,000 bytes compressed AND decompressed; a batch is split by BYTES well below that, because
+# content capture can make 100 events exceed it (docs/PHASES.md, P2.7b note).
+SERVER_BODY_LIMIT = 256_000
+DEFAULT_BATCH_BYTES = 200_000
 
 
 class Config(object):
@@ -24,7 +28,8 @@ class Config(object):
     __slots__ = (
         "api_key", "base_url", "ingest_url", "batch_size", "queue_size", "flush_interval_ms",
         "min_flush_interval_ms", "max_flush_interval_ms", "timeout_s", "exit_flush_timeout_s",
-        "capture_content", "allow_insecure_http",
+        "capture_content", "allow_insecure_http", "compress", "max_batch_bytes", "retry_base_s", "retry_max_s",
+        "max_retry_after_s", "max_quota_retry_after_s", "max_event_age_s",
     )
 
     def __init__(self, **kw: Any) -> None:
@@ -61,6 +66,13 @@ def resolve_config(
     exit_flush_timeout_s: float = 2.0,
     capture_content: bool = False,
     allow_insecure_http: bool = False,
+    compress: bool = True,
+    max_batch_bytes: int = DEFAULT_BATCH_BYTES,
+    retry_base_s: float = 1.0,
+    retry_max_s: float = 120.0,
+    max_retry_after_s: float = 60.0,
+    max_quota_retry_after_s: float = 900.0,
+    max_event_age_s: float = 3_600.0,
 ) -> Tuple[Optional[Config], Optional[str]]:
     """Returns (config, None) or (None, reason). The reason never contains the API key."""
     key = api_key if api_key is not None else os.environ.get(ENV_API_KEY)
@@ -90,6 +102,8 @@ def resolve_config(
     base_url = "%s://%s%s" % (parts.scheme, parts.netloc, parts.path.rstrip("/"))
     lo = _clamp(min_flush_interval_ms, 10, 60_000, 1_000)
     hi = _clamp(max_flush_interval_ms, lo, 600_000, 60_000)
+    base = _clamp(retry_base_s, 0.001, 60, 1.0)
+    retry_after_cap = _clamp(max_retry_after_s, 0, 3_600, 60.0)
     cfg = Config(
         api_key=key,
         base_url=base_url,
@@ -103,6 +117,18 @@ def resolve_config(
         exit_flush_timeout_s=_clamp(exit_flush_timeout_s, 0, 30, 2.0),
         capture_content=bool(capture_content),
         allow_insecure_http=bool(allow_insecure_http),
+        compress=bool(compress),
+        max_batch_bytes=int(_clamp(max_batch_bytes, 1_000, SERVER_BODY_LIMIT - 6_000, DEFAULT_BATCH_BYTES)),
+        retry_base_s=base,
+        retry_max_s=_clamp(retry_max_s, base, 3_600, 120.0),
+        # The server's Retry-After can be up to a day (daily quota); honouring that would park the background thread.
+        max_retry_after_s=retry_after_cap,
+        # A daily quota ("quota_exceeded") answers Retry-After until UTC midnight. Retrying every minute or two all day would
+        # cost the server one invocation per retry per project, so that one reason is honoured up to a larger cap. It is
+        # never smaller than the cap for other errors, and never more than a day.
+        max_quota_retry_after_s=_clamp(max_quota_retry_after_s, retry_after_cap, 86_400, max(900.0, retry_after_cap)),
+        # Events older than the server's 24 h window are refused (ts_too_old), so 23 h is the useful maximum.
+        max_event_age_s=_clamp(max_event_age_s, 1, 82_800, 3_600.0),
     )
     return cfg, None
 

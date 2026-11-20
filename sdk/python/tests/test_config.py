@@ -64,6 +64,31 @@ class TestResolveConfig(unittest.TestCase):
         cfg, _ = resolve_config(API_KEY, "https://x.example.com", batch_size="abc", timeout_s=float("nan"))
         self.assertEqual((cfg.batch_size, cfg.timeout_s), (100, 5.0))
 
+    def test_delivery_options_have_safe_defaults_and_are_clamped(self):
+        cfg, _ = resolve_config(API_KEY, "https://x.example.com")
+        self.assertEqual((cfg.compress, cfg.max_batch_bytes, cfg.retry_base_s, cfg.retry_max_s, cfg.max_retry_after_s, cfg.max_event_age_s),
+                         (True, 200_000, 1.0, 120.0, 60.0, 3600.0))
+        self.assertLess(cfg.max_batch_bytes, 256_000)  # the server's body limit
+        cfg, _ = resolve_config(API_KEY, "https://x.example.com", max_batch_bytes=10**9, retry_base_s=0, retry_max_s=0, max_retry_after_s=10**9, max_event_age_s=10**9)
+        self.assertLess(cfg.max_batch_bytes, 256_000)  # can never be configured past the server limit
+        self.assertEqual(cfg.retry_base_s, 0.001)
+        self.assertGreaterEqual(cfg.retry_max_s, cfg.retry_base_s)
+        self.assertEqual(cfg.max_retry_after_s, 3600)
+        self.assertEqual(cfg.max_event_age_s, 82_800)  # 23 h: the server refuses events older than 24 h
+        cfg, _ = resolve_config(API_KEY, "https://x.example.com", max_batch_bytes=1, max_event_age_s=0, compress=0)
+        self.assertEqual((cfg.max_batch_bytes, cfg.max_event_age_s, cfg.compress), (1_000, 1, False))
+        cfg, _ = resolve_config(API_KEY, "https://x.example.com", retry_base_s="x", max_batch_bytes=None, max_event_age_s=float("nan"))
+        self.assertEqual((cfg.retry_base_s, cfg.max_batch_bytes, cfg.max_event_age_s), (1.0, 200_000, 3600.0))
+
+    def test_the_quota_retry_after_cap_defaults_to_15_minutes_and_is_never_below_the_normal_cap(self):
+        base = "https://x.example.com"
+        self.assertEqual(resolve_config(API_KEY, base)[0].max_quota_retry_after_s, 900.0)
+        self.assertEqual(resolve_config(API_KEY, base, max_quota_retry_after_s=120)[0].max_quota_retry_after_s, 120)
+        self.assertEqual(resolve_config(API_KEY, base, max_quota_retry_after_s=10**9)[0].max_quota_retry_after_s, 86_400)
+        self.assertEqual(resolve_config(API_KEY, base, max_quota_retry_after_s=5, max_retry_after_s=60)[0].max_quota_retry_after_s, 60)
+        self.assertEqual(resolve_config(API_KEY, base, max_quota_retry_after_s="x")[0].max_quota_retry_after_s, 900.0)
+        self.assertEqual(resolve_config(API_KEY, base, max_retry_after_s=3600)[0].max_quota_retry_after_s, 3600)  # raised with the normal cap
+
     def test_repr_never_shows_the_key(self):
         cfg, _ = resolve_config(API_KEY, "https://x.example.com")
         self.assertNotIn(API_KEY, repr(cfg))

@@ -1,12 +1,14 @@
 """HTTP transport: one POST of a batch to /api/ingest, standard library only, never raises."""
 from __future__ import annotations
 
+import gzip
 import json
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
 MAX_RESPONSE_BYTES = 1_000_000
+COMPRESS_MIN_BYTES = 1_024  # below this gzip saves nothing worth the CPU
 
 
 class SendResult(object):
@@ -45,11 +47,12 @@ def _retry_after(headers: Any) -> Optional[float]:
 
 
 class HttpTransport(object):
-    def __init__(self, ingest_url: str, api_key: str, timeout_s: float, user_agent: str) -> None:
+    def __init__(self, ingest_url: str, api_key: str, timeout_s: float, user_agent: str, compress: bool = True) -> None:
         self._url = ingest_url
         self._key = api_key
         self._timeout = timeout_s
         self._ua = user_agent
+        self._compress = compress
         self._opener = urllib.request.build_opener(_NoRedirect)
 
     def __repr__(self) -> str:  # the key is never shown
@@ -58,17 +61,17 @@ class HttpTransport(object):
     def send(self, events: List[Dict[str, Any]]) -> SendResult:
         try:
             data = json.dumps({"events": events}, separators=(",", ":")).encode("utf-8")  # ASCII-escaped: always valid UTF-8
-            request = urllib.request.Request(
-                self._url,
-                data=data,
-                method="POST",
-                headers={
-                    "Authorization": "Bearer " + self._key,
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "User-Agent": self._ua,
-                },
-            )
+            headers = {
+                "Authorization": "Bearer " + self._key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": self._ua,
+            }
+            if self._compress and len(data) >= COMPRESS_MIN_BYTES:
+                # mtime=0 keeps the output reproducible; the server inflates with a hard output limit.
+                data = gzip.compress(data, 6, mtime=0)
+                headers["Content-Encoding"] = "gzip"
+            request = urllib.request.Request(self._url, data=data, method="POST", headers=headers)
             try:
                 with self._opener.open(request, timeout=self._timeout) as response:
                     status = response.status
