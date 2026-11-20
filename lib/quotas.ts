@@ -29,6 +29,11 @@ export const RETENTION = {
   contentDays: 3,
   jobsAndAlertsDays: 30,
   minuteRollupsHours: 48,
+  /** Daily job (db/migrations/0011): hourly rollups, usage_daily rows and budget_usage keys are aged out of the database. */
+  hourlyRollupsDays: 90,
+  usageDailyDays: 400,
+  budgetDayKeysDays: 7,
+  budgetMonthKeysMonths: 2,
 } as const;
 
 /**

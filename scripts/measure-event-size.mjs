@@ -53,6 +53,9 @@ const CHUNK = 5000;
 
 configureLocalNeon(process.env.DATABASE_URL);
 const sql = neon(process.env.DATABASE_URL);
+// Since migration 0011 app_rw may not create partitions: use the job role (JOB_DATABASE_URL) or the migrator for that one call.
+const adminUrl = process.env.JOB_DATABASE_URL ?? process.env.MIGRATION_DATABASE_URL;
+const partitions = adminUrl ? neon(adminUrl) : sql;
 console.log(`Database host: ${new URL(process.env.DATABASE_URL).hostname}  rows per run: ${ROWS}  runs: ${RUN_ORDER.join(", ")}  also measuring: ${ONLY === "all" ? "rollups, usage_daily, event_content" : "events only"}`);
 
 const owner = `measure_${randomUUID()}`;
@@ -127,7 +130,7 @@ const round1 = (x) => Math.round(x * 10) / 10;
 async function pickCleanPartitions(count) {
   const picked = [];
   for (let m = 2; m <= 14 && picked.length < count; m++) {
-    await sql`select ensure_event_partitions((date_trunc('month', now() at time zone 'UTC') + make_interval(months => ${m}::int))::date, 1)`;
+    await partitions`select ensure_event_partitions((date_trunc('month', now() at time zone 'UTC') + make_interval(months => ${m}::int))::date, 1)`;
     const [{ part, start }] = await sql`select to_char(date_trunc('month', now() at time zone 'UTC') + make_interval(months => ${m}::int), '"events_y"YYYY"m"MM') as part,
       to_char(date_trunc('month', now() at time zone 'UTC') + make_interval(months => ${m}::int), 'YYYY-MM-DD"T"00:00:00"Z"') as start`;
     const size = await sizeOf(`public.${part}`);
