@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import { configureLocalNeon } from "../db/neon-local.mjs";
 
 /**
  * Runs once before the db test project. If the database cannot be reached the run stops here, loudly,
@@ -22,6 +23,7 @@ export default async function setup() {
   if (!url) {
     throw new Error("[db tests] DATABASE_URL is not set. Add it to .env.local, or set SKIP_DB_TESTS=1 to skip database tests explicitly.");
   }
+  configureLocalNeon(url);
   const sql = neon(url);
   let lastError: unknown;
   for (let attempt = 0; attempt <= DELAYS_MS.length; attempt++) {

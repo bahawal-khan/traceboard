@@ -3,6 +3,7 @@
 // Passwords come from env only and travel as bound parameters (set_config in a
 // transaction), never in SQL text, the repo, or migrations. Nothing is printed.
 import { neon } from "@neondatabase/serverless";
+import { configureLocalNeon } from "../db/neon-local.mjs";
 
 try {
   process.loadEnvFile(".env.local");
@@ -27,6 +28,7 @@ if (APP_RW_PASSWORD === MIGRATOR_PASSWORD) {
   process.exit(1);
 }
 
+configureLocalNeon(ADMIN_DATABASE_URL); // CI / local proxy only
 const sql = neon(ADMIN_DATABASE_URL);
 
 // neondb_owner is not a real superuser, so we never ALTER role attributes
