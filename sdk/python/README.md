@@ -73,3 +73,14 @@ with span("support agent", kind="agent"):       # starts a trace; everything ins
 - Streams: if you did not pass `stream_options`, the wrapper adds `include_usage` so token counts exist and hides the extra usage-only chunk from you. A stream you abandon is still recorded (tag `incomplete`).
 - Context follows asyncio tasks. Plain threads do not inherit it: start them with `contextvars.copy_context().run(...)`.
 - Not covered yet: `responses.create`, `with_raw_response`, `beta.*`; call `instrument_openai` again on clients made with `with_options()`.
+
+### Anthropic
+
+```python
+from anthropic import Anthropic
+from llm_monitor.integrations.anthropic import instrument_anthropic
+
+client = instrument_anthropic(Anthropic(), mon)      # also AsyncAnthropic; create(), create(stream=True) and messages.stream()
+```
+
+Anthropic reports `input_tokens` without cached tokens; the event carries the total prompt (`input + cache_read + cache_creation`) with `cache_read` as `cached_tokens`, which is what the platform's cost model expects. For `messages.stream()`, time to first token is recorded when you iterate the stream object (not `text_stream`); tokens and latency are always recorded.
