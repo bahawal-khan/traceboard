@@ -12,8 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SKIP_ENV_VALIDATION: "1"
-      # No database in CI yet (P1.10 adds the integration job): skip the DB tests explicitly.
-      SKIP_DB_TESTS: "1"
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@v7
@@ -24,7 +22,75 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:unit
       - run: npm run build
       # Production dependencies only; dev-tool advisories are tracked separately.
       - run: npm audit --omit=dev --audit-level=high
+
+  # Integration: IDOR + RLS + repo tests against a real Postgres (ci/docker-compose.db.yml). No secrets are used;
+  # every credential below is generated for this run, in an ephemeral container.
+  db-tests:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGDATABASE: main
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Start Postgres and the Neon HTTP proxy
+        run: |
+          echo "127.0.0.1 db.localtest.me" | sudo tee -a /etc/hosts
+          docker compose -f ci/docker-compose.db.yml up -d --wait
+
+      - name: Generate run-only credentials
+        run: |
+          APP_PW=$(openssl rand -hex 24)
+          MIG_PW=$(openssl rand -hex 24)
+          echo "::add-mask::$APP_PW"
+          echo "::add-mask::$MIG_PW"
+          {
+            echo "APP_RW_PASSWORD=$APP_PW"
+            echo "MIGRATOR_PASSWORD=$MIG_PW"
+            echo "ADMIN_DATABASE_URL=postgres://postgres:postgres@db.localtest.me:5432/main"
+            echo "DATABASE_URL=postgres://app_rw:$APP_PW@db.localtest.me:5432/main"
+            echo "MIGRATION_DATABASE_URL=postgres://migrator:$MIG_PW@db.localtest.me:5432/main"
+            echo "CRON_SECRET=$(openssl rand -hex 16)"
+            echo "JOB_HMAC_SECRET=$(openssl rand -hex 16)"
+            echo "PROVIDER_KEY_MASTER_KEY=$(openssl rand -base64 32)"
+            echo "CLERK_SECRET_KEY=sk_test_ci_placeholder"
+            echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_ci_placeholder"
+          } >> "$GITHUB_ENV"
+
+      - name: Wait for the database through the proxy
+        run: node scripts/wait-for-db.mjs
+
+      - name: Create roles
+        run: npm run db:setup-roles
+
+      - name: Apply migrations as migrator (file order, one transaction per file)
+        run: |
+          for f in db/migrations/*.sql; do
+            echo "applying $f"
+            PGUSER=migrator PGPASSWORD="$MIGRATOR_PASSWORD" psql -v ON_ERROR_STOP=1 --single-transaction -q -f "$f"
+          done
+
+      - name: Seed model prices
+        run: npm run db:seed
+
+      - name: Database tests (IDOR, RLS, repo)
+        run: npm run test:db
+
+      - name: Proxy and Postgres logs (on failure)
+        if: failure()
+        run: docker compose -f ci/docker-compose.db.yml logs --no-color --tail=200
+
+      - name: Stop containers
+        if: always()
+        run: docker compose -f ci/docker-compose.db.yml down -v
