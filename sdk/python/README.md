@@ -2,15 +2,41 @@
 
 Standard library only. Python 3.9+.
 
+## Quickstart (about 2 minutes)
+
+1. In the dashboard create a project and an API key (Project -> API keys). Copy the key once; it starts with `lm_`.
+2. Install the SDK from the repository (not on PyPI yet): `pip install ./sdk/python`
+3. Set the environment and add three lines:
+
+```bash
+export LLM_MONITOR_API_KEY=lm_...
+export LLM_MONITOR_URL=https://your-app.vercel.app
+```
+
 ```python
 from llm_monitor import Monitor
+from llm_monitor.integrations.openai import instrument_openai   # or .anthropic: instrument_anthropic
 
+client = instrument_openai(OpenAI(), Monitor())    # that is it: calls now appear in the dashboard
+```
+
+No provider account yet? Run the demo, which sends a simulated support agent (traces, tools, a failing tool and a looping agent)
+through the real wrappers and needs no LLM key:
+
+```bash
+python sdk/python/examples/demo.py              # sends ~80 events to your project, then open the dashboard
+python sdk/python/examples/demo.py --dry-run    # no key, no network: prints what would be sent (--out events.jsonl to keep it)
+```
+
+Manual events work too:
+
+```python
 mon = Monitor()   # reads LLM_MONITOR_API_KEY and LLM_MONITOR_URL
 mon.track(kind="llm", model="gpt-4o", input_tokens=120, output_tokens=40, latency_ms=830)
 ```
 
-This is the SDK core: queue, batching, background flush, flush at exit, retries, gzip, hashing and local redaction.
-Provider wrappers (`mon.wrap(...)`) and trace context arrive in the next steps.
+If nothing shows up: `mon.stats` (counters), `mon.config_error` (why the SDK disabled itself), and the one-time
+`RuntimeWarning` printed at start-up say what is wrong. The SDK never raises into your app.
 
 * **Never raises into your app.** Problems are counted in `mon.stats`. A missing or invalid configuration disables the SDK
   (one `RuntimeWarning` says why; `mon.config_error` has the reason; it never contains your key).
