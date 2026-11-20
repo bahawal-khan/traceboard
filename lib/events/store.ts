@@ -26,6 +26,14 @@ export interface BudgetUsageRow {
   spentMicro: number;
 }
 
+/** What the same write learned about the project, for the response: no extra round trip. */
+export interface ProjectSignals {
+  /** `projects.last_viewed_at` (set by the live view); null when nobody has watched yet. */
+  lastViewedAt: Date | null;
+  /** app_state `conserve` flag (free-tier protection); false when unset. */
+  conserve: boolean;
+}
+
 export interface PersistResult {
   /** Rows actually inserted; the batch size minus this is the number of duplicates skipped. */
   inserted: number;
@@ -33,6 +41,8 @@ export interface PersistResult {
   contentStored: number;
   /** null only for an empty batch, which does not touch the database. */
   usage: UsageToday | null;
+  /** null only for an empty batch. */
+  signals: ProjectSignals | null;
   /** Budgets whose spend changed in this write; empty for a batch of duplicates or zero cost. */
   budgets: BudgetUsageRow[];
 }

@@ -46,6 +46,8 @@ function toWire(e: NormalizedEvent, content: PreparedContent | null) {
 const resultSchema = z.object({
   inserted: z.coerce.number().int().min(0),
   content_stored: z.coerce.number().int().min(0),
+  last_viewed_at: z.union([z.date(), z.string()]).nullable(),
+  conserve: z.boolean(),
   usage: z.object({ events: z.coerce.number(), requests: z.coerce.number(), cost_micro: z.coerce.number() }),
   budgets: z.array(
     z.object({
@@ -123,7 +125,7 @@ export class PgEventStore implements EventStore {
     if (!ctx.scopes.includes("ingest")) throw new TenantError("persist: key lacks the ingest scope");
     const projectId = ctx.projectIds[0];
     if (ctx.projectIds.length !== 1 || !projectId) throw new TenantError("persist: an API key context has exactly one project");
-    if (events.length === 0) return { inserted: 0, contentStored: 0, usage: null, budgets: [] };
+    if (events.length === 0) return { inserted: 0, contentStored: 0, usage: null, signals: null, budgets: [] };
     const hasContent = events.some((e) => e.content && (e.content.input !== undefined || e.content.output !== undefined));
     const cipher = hasContent ? this.cipher() : null; // no key: content is dropped, never stored in clear
     const payload = JSON.stringify(
@@ -280,6 +282,8 @@ export class PgEventStore implements EventStore {
         )
         select (select count(*) from ins)::int as inserted,
                (select count(*) from c)::int as content_stored,
+               (select p.last_viewed_at from projects p where p.id = ${projectId}::uuid) as last_viewed_at,
+               coalesce((select value = 'true'::jsonb from app_state where key = 'conserve'), false) as conserve,
                (select to_jsonb(u) from u) as usage,
                coalesce((select jsonb_agg(jsonb_build_object(
                    'budget_id', bu.budget_id, 'scope', bg.scope, 'period', bg.period, 'limit_usd', bg.limit_usd::text,
@@ -290,6 +294,7 @@ export class PgEventStore implements EventStore {
     return {
       inserted: r.inserted,
       contentStored: r.content_stored,
+      signals: { lastViewedAt: r.last_viewed_at === null ? null : new Date(r.last_viewed_at), conserve: r.conserve },
       usage: { events: r.usage.events, requests: r.usage.requests, costMicro: r.usage.cost_micro },
       budgets: r.budgets.map((b) => ({
         budgetId: b.budget_id,

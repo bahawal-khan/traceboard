@@ -28,6 +28,8 @@ const ev = (o: Partial<NormalizedEvent> = {}): NormalizedEvent => ({
 const RESULT = {
   inserted: 3,
   content_stored: 0,
+  last_viewed_at: null,
+  conserve: false,
   usage: { events: 10, requests: 2, cost_micro: 500 },
   budgets: [{ budget_id: "44444444-4444-4444-8444-444444444444", scope: "project", period: "day", limit_usd: "5", action: "block", period_key: "2026-11-20", spent_micro: 123456 }],
 };
@@ -50,6 +52,7 @@ describe("PgEventStore (statement shape; no database)", () => {
     expect(r).toEqual({
       inserted: 3,
       contentStored: 0,
+      signals: { lastViewedAt: null, conserve: false },
       usage: { events: 10, requests: 2, costMicro: 500 },
       budgets: [{ budgetId: "44444444-4444-4444-8444-444444444444", scope: "project", period: "day", limitUsd: "5", action: "block", periodKey: "2026-11-20", spentMicro: 123456 }],
     });
@@ -81,7 +84,7 @@ describe("PgEventStore (statement shape; no database)", () => {
   });
 
   it("does not touch the database for an empty batch", async () => {
-    expect(await new PgEventStore().persist(ctx(), [])).toEqual({ inserted: 0, contentStored: 0, usage: null, budgets: [] });
+    expect(await new PgEventStore().persist(ctx(), [])).toEqual({ inserted: 0, contentStored: 0, usage: null, signals: null, budgets: [] });
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
