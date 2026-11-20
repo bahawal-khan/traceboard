@@ -7,7 +7,9 @@ vi.mock("@/lib/db/client", () => ({ getSql: () => ({ transaction: mocks.transact
 import { isRetryableTxError, PgEventStore } from "@/lib/events/pg-store";
 import { isMissingPartitionError, MissingPartitionError } from "@/lib/events/store";
 import type { NormalizedEvent } from "@/lib/ingest/normalize";
+import { contentAad, createContentCipher } from "@/lib/ingest/content";
 import { issueCtx, TenantError, type ApiKeyCtx } from "@/lib/repo/tenant";
+import { randomBytes } from "node:crypto";
 
 const PID = "11111111-1111-4111-8111-111111111111";
 const OTHER = "99999999-9999-4999-8999-999999999999";
@@ -25,6 +27,7 @@ const ev = (o: Partial<NormalizedEvent> = {}): NormalizedEvent => ({
 
 const RESULT = {
   inserted: 3,
+  content_stored: 0,
   usage: { events: 10, requests: 2, cost_micro: 500 },
   budgets: [{ budget_id: "44444444-4444-4444-8444-444444444444", scope: "project", period: "day", limit_usd: "5", action: "block", period_key: "2026-11-20", spent_micro: 123456 }],
 };
@@ -46,6 +49,7 @@ describe("PgEventStore (statement shape; no database)", () => {
     const r = await new PgEventStore().persist(ctx(), [ev(), ev({ eventId: "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e1f41" })]);
     expect(r).toEqual({
       inserted: 3,
+      contentStored: 0,
       usage: { events: 10, requests: 2, costMicro: 500 },
       budgets: [{ budgetId: "44444444-4444-4444-8444-444444444444", scope: "project", period: "day", limitUsd: "5", action: "block", periodKey: "2026-11-20", spentMicro: 123456 }],
     });
@@ -62,21 +66,22 @@ describe("PgEventStore (statement shape; no database)", () => {
     const sneaky = { ...ev(), projectId: OTHER, project_id: OTHER } as unknown as NormalizedEvent;
     await new PgEventStore().persist(ctx(), [sneaky]);
     const insert = seen[1]!;
-    expect(insert.values[0]).toBe(PID);
-    const payload = JSON.parse(insert.values[1] as string) as Array<Record<string, unknown>>;
+    expect(insert.values).toContain(PID);
+    expect(insert.values[0]).not.toBe(PID); // the first parameter is the row payload, not a project id
+    const payload = JSON.parse(insert.values[0] as string) as Array<Record<string, unknown>>;
     expect(JSON.stringify(payload)).not.toContain(OTHER); // the wire form lists columns explicitly
     expect(payload[0]).not.toHaveProperty("project_id");
   });
 
   it("sends the rows as one JSON parameter with ISO timestamps", async () => {
     await new PgEventStore().persist(ctx(), [ev({ model: "m", inputTokens: 5, costUsd: "0.000001", tags: ["a"] })]);
-    const payload = JSON.parse(seen[1]!.values[1] as string) as Array<Record<string, unknown>>;
+    const payload = JSON.parse(seen[1]!.values[0] as string) as Array<Record<string, unknown>>;
     expect(payload).toHaveLength(1);
     expect(payload[0]).toMatchObject({ model: "m", input_tokens: 5, cost_usd: "0.000001", tags: ["a"], occurred_at: "2026-11-20T11:59:00.000Z", status: "ok", kind: "llm" });
   });
 
   it("does not touch the database for an empty batch", async () => {
-    expect(await new PgEventStore().persist(ctx(), [])).toEqual({ inserted: 0, usage: null, budgets: [] });
+    expect(await new PgEventStore().persist(ctx(), [])).toEqual({ inserted: 0, contentStored: 0, usage: null, budgets: [] });
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
@@ -92,7 +97,7 @@ describe("PgEventStore (statement shape; no database)", () => {
     const text = seen[1]!.text;
     // The only place rows are read from the request payload is the insert itself.
     expect(text.match(/jsonb_to_recordset/g)).toHaveLength(1);
-    expect(text).toMatch(/returning occurred_at, trace_id, model, status/);
+    expect(text).toMatch(/returning event_id, occurred_at, trace_id, model, status/);
     expect(text).toMatch(/from ins\s*\)/); // ev is built from ins
     for (const cte of ["metrics_minute", "metrics_hourly"]) expect(text).toContain(`insert into ${cte}`);
     expect(text).toContain("insert into usage_daily");
@@ -224,5 +229,59 @@ describe("deadlock / serialization retry", () => {
     mocks.transaction.mockReset();
     await expect(store().store.persist(ctx(["eval"]), [ev()])).rejects.toBeInstanceOf(TenantError);
     expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("content capture in the statement (no database)", () => {
+  const key = randomBytes(32);
+  const cipher = createContentCipher(key);
+  const withContent = (o: Partial<NormalizedEvent> = {}) => ev({ content: { input: "user asked about jane@example.com", output: "PLAINTEXT-ANSWER" }, ...o });
+  const payloadOf = () => JSON.parse(seen[1]!.values[0] as string) as Array<Record<string, unknown>>;
+
+  it("sends ciphertext only: the plaintext appears in no parameter and no SQL text", async () => {
+    await new PgEventStore({ cipher }).persist(ctx(), [withContent()]);
+    const all = JSON.stringify(seen);
+    for (const secret of ["PLAINTEXT-ANSWER", "jane@example.com", "user asked about"]) expect(all).not.toContain(secret);
+    const row = payloadOf()[0]!;
+    expect(String(row.c_in)).toMatch(/^v1\.1\./);
+    expect(String(row.c_out)).toMatch(/^v1\.1\./);
+    // Bound to this project and event: the stored ciphertext decrypts only with the matching AAD.
+    expect(cipher.decrypt(String(row.c_out), contentAad(PID, "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e1f40", "output"))).toBe("PLAINTEXT-ANSWER");
+    expect(cipher.decrypt(String(row.c_in), contentAad(PID, "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e1f40", "input"))).toBe("user asked about [redacted:email]");
+    expect(row.c_rep).toMatchObject({ v: 1, enc: "aes-256-gcm", redactions: { email: 1 } });
+  });
+
+  it("with no key configured, content is dropped: no ciphertext, no plaintext, events still persist", async () => {
+    const r = await new PgEventStore({ cipher: null }).persist(ctx(), [withContent()]);
+    expect(r.inserted).toBe(3);
+    const row = payloadOf()[0]!;
+    expect([row.c_in, row.c_out, row.c_rep]).toEqual([null, null, null]);
+    expect(JSON.stringify(seen)).not.toContain("PLAINTEXT-ANSWER");
+  });
+
+  it("does not even look for the key when the batch has no content", async () => {
+    const source = vi.fn(() => cipher);
+    await new PgEventStore({ cipher: source }).persist(ctx(), [ev(), ev()]);
+    expect(source).not.toHaveBeenCalled();
+    await new PgEventStore({ cipher: source }).persist(ctx(), [withContent()]);
+    expect(source).toHaveBeenCalledTimes(1);
+  });
+
+  it("the content insert reads only inserted rows, only for opted-in projects, with a capped retention", async () => {
+    await new PgEventStore({ cipher }).persist(ctx(), [withContent()]);
+    const text = seen[1]!.text;
+    const c = text.slice(text.indexOf("c as ("), text.indexOf("bk as ("));
+    expect(c).toContain("from ins i");
+    expect(c).toContain("p.capture_content");
+    expect(c).toContain("least(p.content_retention_days,");
+    expect(c).toContain("on conflict (project_id, event_id) do nothing");
+    expect(seen[1]!.values).toContain(3); // RETENTION.contentDays, the platform cap
+  });
+
+  it("never stores content for an event without any (null columns)", async () => {
+    await new PgEventStore({ cipher }).persist(ctx(), [ev(), withContent({ eventId: "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e1f41" })]);
+    const rows = payloadOf();
+    expect([rows[0]!.c_in, rows[0]!.c_out, rows[0]!.c_rep]).toEqual([null, null, null]);
+    expect(rows[1]!.c_in).not.toBeNull();
   });
 });

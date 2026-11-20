@@ -29,6 +29,8 @@ export interface BudgetUsageRow {
 export interface PersistResult {
   /** Rows actually inserted; the batch size minus this is the number of duplicates skipped. */
   inserted: number;
+  /** Content rows stored (encrypted) for newly inserted events; 0 when capture is off, no key is set, or all were duplicates. */
+  contentStored: number;
   /** null only for an empty batch, which does not touch the database. */
   usage: UsageToday | null;
   /** Budgets whose spend changed in this write; empty for a batch of duplicates or zero cost. */
