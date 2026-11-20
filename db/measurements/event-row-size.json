@@ -1,0 +1,232 @@
+{
+  "measuredAt": "2026-11-20T13:15:43.053Z",
+  "postgres": "PostgreSQL 18.7 (84da7d8)",
+  "method": "four runs (lean, heavy, heavy, lean), each on its own fresh future monthly partition; size delta split into heap, fsm/vm, toast and every index; rows counted per partition (tableoid)",
+  "events": {
+    "runs": [
+      {
+        "order": 1,
+        "profile": "lean",
+        "partition": "events_y2027m03",
+        "rows": 10000,
+        "avgRowPayloadBytes": 300,
+        "bytes": {
+          "heap": 3153920,
+          "freeSpaceAndVisibility": 24576,
+          "toast": 0,
+          "indexes": {
+            "pkey (id, occurred_at)": 606208,
+            "unique (project_id, event_id, occurred_at)": 720896,
+            "project_time (project_id, occurred_at desc)": 737280,
+            "thread (partial)": 0,
+            "trace (project_id, trace_id)": 352256
+          },
+          "indexTotal": 2416640,
+          "total": 5595136,
+          "reportedTotalDelta": 5595136
+        },
+        "perRow": {
+          "heap": 315.4,
+          "freeSpaceAndVisibility": 2.5,
+          "toast": 0,
+          "table": 317.8,
+          "indexTotal": 241.7,
+          "total": 559.5,
+          "byIndex": {
+            "pkey (id, occurred_at)": 60.6,
+            "unique (project_id, event_id, occurred_at)": 72.1,
+            "project_time (project_id, occurred_at desc)": 73.7,
+            "thread (partial)": 0,
+            "trace (project_id, trace_id)": 35.2
+          }
+        }
+      },
+      {
+        "order": 2,
+        "profile": "heavy",
+        "partition": "events_y2027m04",
+        "rows": 10000,
+        "avgRowPayloadBytes": 548,
+        "bytes": {
+          "heap": 5857280,
+          "freeSpaceAndVisibility": 24576,
+          "toast": 0,
+          "indexes": {
+            "pkey (id, occurred_at)": 598016,
+            "unique (project_id, event_id, occurred_at)": 770048,
+            "project_time (project_id, occurred_at desc)": 737280,
+            "thread (partial)": 131072,
+            "trace (project_id, trace_id)": 286720
+          },
+          "indexTotal": 2523136,
+          "total": 8404992,
+          "reportedTotalDelta": 8404992
+        },
+        "perRow": {
+          "heap": 585.7,
+          "freeSpaceAndVisibility": 2.5,
+          "toast": 0,
+          "table": 588.2,
+          "indexTotal": 252.3,
+          "total": 840.5,
+          "byIndex": {
+            "pkey (id, occurred_at)": 59.8,
+            "unique (project_id, event_id, occurred_at)": 77,
+            "project_time (project_id, occurred_at desc)": 73.7,
+            "thread (partial)": 13.1,
+            "trace (project_id, trace_id)": 28.7
+          }
+        }
+      },
+      {
+        "order": 3,
+        "profile": "heavy",
+        "partition": "events_y2027m05",
+        "rows": 10000,
+        "avgRowPayloadBytes": 548,
+        "bytes": {
+          "heap": 5857280,
+          "freeSpaceAndVisibility": 24576,
+          "toast": 0,
+          "indexes": {
+            "pkey (id, occurred_at)": 598016,
+            "unique (project_id, event_id, occurred_at)": 737280,
+            "project_time (project_id, occurred_at desc)": 737280,
+            "thread (partial)": 139264,
+            "trace (project_id, trace_id)": 294912
+          },
+          "indexTotal": 2506752,
+          "total": 8388608,
+          "reportedTotalDelta": 8388608
+        },
+        "perRow": {
+          "heap": 585.7,
+          "freeSpaceAndVisibility": 2.5,
+          "toast": 0,
+          "table": 588.2,
+          "indexTotal": 250.7,
+          "total": 838.9,
+          "byIndex": {
+            "pkey (id, occurred_at)": 59.8,
+            "unique (project_id, event_id, occurred_at)": 73.7,
+            "project_time (project_id, occurred_at desc)": 73.7,
+            "thread (partial)": 13.9,
+            "trace (project_id, trace_id)": 29.5
+          }
+        }
+      },
+      {
+        "order": 4,
+        "profile": "lean",
+        "partition": "events_y2027m06",
+        "rows": 10000,
+        "avgRowPayloadBytes": 300,
+        "bytes": {
+          "heap": 3153920,
+          "freeSpaceAndVisibility": 24576,
+          "toast": 0,
+          "indexes": {
+            "pkey (id, occurred_at)": 598016,
+            "unique (project_id, event_id, occurred_at)": 778240,
+            "project_time (project_id, occurred_at desc)": 737280,
+            "thread (partial)": 0,
+            "trace (project_id, trace_id)": 335872
+          },
+          "indexTotal": 2449408,
+          "total": 5627904,
+          "reportedTotalDelta": 5627904
+        },
+        "perRow": {
+          "heap": 315.4,
+          "freeSpaceAndVisibility": 2.5,
+          "toast": 0,
+          "table": 317.8,
+          "indexTotal": 244.9,
+          "total": 562.8,
+          "byIndex": {
+            "pkey (id, occurred_at)": 59.8,
+            "unique (project_id, event_id, occurred_at)": 77.8,
+            "project_time (project_id, occurred_at desc)": 73.7,
+            "thread (partial)": 0,
+            "trace (project_id, trace_id)": 33.6
+          }
+        }
+      }
+    ],
+    "summary": {
+      "lean": {
+        "runs": 2,
+        "total": {
+          "mean": 561.2,
+          "min": 559.5,
+          "max": 562.8,
+          "spreadPct": 0.6
+        },
+        "table": {
+          "mean": 317.8,
+          "min": 317.8,
+          "max": 317.8,
+          "spreadPct": 0
+        },
+        "indexes": {
+          "mean": 243.3,
+          "min": 241.7,
+          "max": 244.9,
+          "spreadPct": 1.3
+        }
+      },
+      "heavy": {
+        "runs": 2,
+        "total": {
+          "mean": 839.7,
+          "min": 838.9,
+          "max": 840.5,
+          "spreadPct": 0.2
+        },
+        "table": {
+          "mean": 588.2,
+          "min": 588.2,
+          "max": 588.2,
+          "spreadPct": 0
+        },
+        "indexes": {
+          "mean": 251.5,
+          "min": 250.7,
+          "max": 252.3,
+          "spreadPct": 0.6
+        }
+      }
+    }
+  },
+  "rollups": {
+    "metrics_minute": {
+      "rows": 4000,
+      "totalBytes": 909312,
+      "bytesPerRow": 227.3,
+      "avgRowPayloadBytes": 157
+    },
+    "metrics_hourly": {
+      "rows": 4000,
+      "totalBytes": 909312,
+      "bytesPerRow": 227.3,
+      "avgRowPayloadBytes": 157
+    }
+  },
+  "usage_daily": {
+    "rows": 2000,
+    "totalBytes": 229376,
+    "bytesPerRow": 114.7,
+    "avgRowPayloadBytes": 72
+  },
+  "event_content": {
+    "rows": 500,
+    "inputChars": 2736,
+    "totalBytes": 3268608,
+    "bytesPerRow": 6537.2,
+    "avgRowPayloadBytes": 5744,
+    "note": "maximum case: 2 KB input + 2 KB output, both encrypted"
+  },
+  "rowsPerRun": 10000,
+  "warnings": [],
+  "consistent": true
+}
