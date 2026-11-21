@@ -1,6 +1,8 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ChartContainer,
   ChartLegend,
@@ -9,7 +11,24 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { formatUtc } from "@/lib/format";
+import { formatCompact, formatCostUsd, formatDuration, formatInt, formatPercent, formatUtc } from "@/lib/format";
+
+export type ValueFormat = "compact" | "int" | "cost" | "duration" | "percent";
+
+const FORMATTERS: Record<ValueFormat, (v: number) => string> = {
+  compact: formatCompact,
+  int: formatInt,
+  cost: formatCostUsd,
+  duration: formatDuration,
+  percent: (v) => formatPercent(v),
+};
+
+/** Axis ticks of one chart share their decimals ("$0.25 $0.50", never "$0.25 $0.500"). Tooltips keep full precision. */
+function axisFormatter(format: ValueFormat, max: number): (v: number) => string {
+  if (format !== "cost") return FORMATTERS[format];
+  const decimals = max >= 10 ? 0 : max >= 1 ? 2 : max >= 0.1 ? 3 : 4;
+  return (v) => `$${v.toFixed(decimals)}`;
+}
 
 export interface TimeSeriesSeries {
   /** Data key. Must be a plain identifier (it becomes a CSS variable name). */
@@ -26,17 +45,18 @@ export interface TimeSeriesChartProps {
   kind?: "area" | "line" | "bar";
   /** Stack series (area and bar only). */
   stacked?: boolean;
-  /** Formats values for the axis and tooltip, for example formatCostUsd or formatCompact. */
-  formatValue: (v: number) => string;
-  /** Formats y axis ticks only (consistent decimals). Defaults to `formatValue`. */
-  formatAxis?: (v: number) => string;
-  /** Formats the x tick. Default: HH:MM for ranges under 2 days, else MM-DD. */
-  formatTick?: (t: number) => string;
+  /**
+   * How values are written on the axis and in the tooltip. A NAME, not a function, so server components can render
+   * this chart: functions cannot cross the server/client boundary. X ticks are HH:MM for ranges up to 2 days, else MM-DD.
+   */
+  valueFormat: ValueFormat;
   ariaLabel: string;
   className?: string;
 }
 
-const defaultTick = (t: number, spanMs: number) => {
+const subscribeNothing = () => () => {};
+
+const defaultTick =(t: number, spanMs: number) => {
   const iso = new Date(t).toISOString();
   return spanMs <= 2 * 86_400_000 ? iso.slice(11, 16) : iso.slice(5, 10);
 };
@@ -51,15 +71,20 @@ export function TimeSeriesChart({
   series,
   kind = "area",
   stacked = false,
-  formatValue,
-  formatAxis,
-  formatTick,
+  valueFormat,
   ariaLabel,
   className,
 }: TimeSeriesChartProps) {
+  // The plot needs the browser (it measures its box). Until it mounts, the server HTML and the first client render show
+  // a skeleton of the same size, so the page neither looks broken nor jumps when the chart code arrives.
+  const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const config: ChartConfig = Object.fromEntries(series.map((s) => [s.key, { label: s.label, color: s.color }]));
   const spanMs = data.length > 1 ? data[data.length - 1].t - data[0].t : 0;
-  const tick = formatTick ?? ((t: number) => defaultTick(t, spanMs));
+  const tick = (t: number) => defaultTick(t, spanMs);
+  const formatValue = FORMATTERS[valueFormat];
+  let max = 0;
+  for (const row of data) for (const s of series) max = Math.max(max, row[s.key] ?? 0);
+  const formatAxis = axisFormatter(valueFormat, max);
 
   const common = {
     data,
@@ -81,7 +106,7 @@ export function TimeSeriesChart({
         tickMargin={8}
         minTickGap={32}
       />
-      <YAxis tickFormatter={formatAxis ?? formatValue} tickLine={false} axisLine={false} width={56} tickMargin={4} />
+      <YAxis tickFormatter={formatAxis} tickLine={false} axisLine={false} width={56} tickMargin={4} />
       <ChartTooltip
         cursor={{ stroke: "var(--muted-foreground)", strokeWidth: 1 }}
         content={
@@ -102,6 +127,8 @@ export function TimeSeriesChart({
     </>
   );
 
+  if (!mounted) return <Skeleton aria-hidden className={className ?? "h-full w-full"} />;
+
   return (
     <div role="img" aria-label={ariaLabel} className={className ?? "h-full w-full"}>
       <ChartContainer config={config} className="aspect-auto h-full w-full">
@@ -118,6 +145,7 @@ export function TimeSeriesChart({
                 stroke="var(--card)"
                 strokeWidth={stacked ? 2 : 0}
                 maxBarSize={28}
+                isAnimationActive={false}
               />
             ))}
           </BarChart>
@@ -134,6 +162,7 @@ export function TimeSeriesChart({
                 dot={false}
                 activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
                 connectNulls={false}
+                isAnimationActive={false}
               />
             ))}
           </LineChart>
@@ -153,6 +182,7 @@ export function TimeSeriesChart({
                 dot={false}
                 activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
                 connectNulls={false}
+                isAnimationActive={false}
               />
             ))}
           </AreaChart>

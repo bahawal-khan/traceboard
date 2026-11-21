@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/charts/status-badge";
 import { TimeSeriesChart } from "@/components/charts/time-series-chart";
 import { ProjectNav } from "@/components/dashboard/project-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { formatCompact, formatCostUsd, formatDuration, formatPercent } from "@/lib/format";
+import { formatCompact, formatCostUsd, formatPercent } from "@/lib/format";
 
 // Deterministic fake data (no Math.random: server and client must render the same).
 const HOUR = 3_600_000;
@@ -82,7 +82,7 @@ export function DesignGallery() {
             </table>
           }
         >
-          <TimeSeriesChart data={rows} series={tokenSeries} kind="area" stacked formatValue={formatCompact} ariaLabel="Stacked area chart of input and output tokens per hour" />
+          <TimeSeriesChart data={rows} series={tokenSeries} kind="area" stacked valueFormat="compact" ariaLabel="Stacked area chart of input and output tokens per hour" />
         </ChartCard>
 
         <ChartCard
@@ -97,7 +97,7 @@ export function DesignGallery() {
               { key: "p95", label: "p95", color: "var(--chart-2)" },
             ]}
             kind="line"
-            formatValue={formatDuration}
+            valueFormat="duration"
             ariaLabel="Line chart of p50 and p95 latency per hour"
           />
         </ChartCard>
@@ -107,8 +107,7 @@ export function DesignGallery() {
             data={rows}
             series={[{ key: "cost", label: "Cost", color: "var(--chart-3)" }]}
             kind="bar"
-            formatValue={formatCostUsd}
-            formatAxis={(v) => `$${v.toFixed(2)}`}
+            valueFormat="cost"
             ariaLabel="Bar chart of cost per hour; hours with an unpriced model are left blank"
           />
         </ChartCard>
