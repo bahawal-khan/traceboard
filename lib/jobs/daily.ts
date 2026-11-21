@@ -1,7 +1,7 @@
 import type { Logger } from "@/lib/logger";
 
 /**
- * The daily maintenance job: partitions, retention purge, storage report. Pure orchestration over a `JobStore` (the SQL
+ * The daily maintenance job: partitions, retention purge, storage report and guard. Pure orchestration over a `JobStore` (the SQL
  * functions of migration 0011, see lib/repo/jobs.ts), so the batching, time budget and failure isolation are unit tested.
  *
  * Properties (Vercel Hobby runs the cron once a day, +-59 minutes, and a run may be retried or overlap a manual one):
@@ -32,6 +32,14 @@ export interface StorageReport {
   eventsBudgetBytes: number;
   eventsRatio: number;
 }
+/** Result of apply_storage_guard(): the level after this run (with hysteresis) and the flags it implies. */
+export interface StorageGuardResult {
+  level: "ok" | "warn" | "critical";
+  previousLevel: "ok" | "warn" | "critical";
+  ratio: number;
+  conserve: boolean;
+  signupsPaused: boolean;
+}
 export interface JobStore {
   ensurePartitions(): Promise<number>;
   partitionHealth(): Promise<PartitionHealth>;
@@ -41,6 +49,8 @@ export interface JobStore {
   purgeOrphanedContent(batch: number): Promise<number>;
   purgeRollups(batch: number): Promise<RollupPurge>;
   storageReport(): Promise<StorageReport>;
+  /** Measures, decides the level (SQL holds the thresholds and the hysteresis) and records it in app_state. Idempotent. */
+  applyStorageGuard(): Promise<StorageGuardResult>;
 }
 
 export const DAILY_JOB = {
@@ -77,7 +87,9 @@ export interface DailyJobResult {
     rollups: LoopResult & { byTable: RollupPurge };
   };
   droppedPartitions: { status: StepStatus; dropped?: number; error?: "step_failed" };
-  storage: { status: StepStatus; report?: StorageReport; level?: "ok" | "warn" | "critical"; error?: "step_failed" };
+  storage: { status: StepStatus; report?: StorageReport; error?: "step_failed" };
+  /** The storage guard: level ok/warn/critical, conserve flag (warn+), signups paused (critical). */
+  guard: { status: StepStatus; result?: StorageGuardResult; changed?: boolean; error?: "step_failed" };
 }
 
 export interface RunOptions {
@@ -85,12 +97,6 @@ export interface RunOptions {
   batch?: number;
   purgeBudgetMs?: number;
   log?: Pick<Logger, "info" | "warn" | "error">;
-}
-
-/** Storage guard thresholds (docs: warn at 70%, pause signups at 85% of the events budget; the pause itself is P2.11c). */
-export const STORAGE_LEVELS = { warn: 0.7, critical: 0.85 } as const;
-export function storageLevel(ratio: number): "ok" | "warn" | "critical" {
-  return ratio >= STORAGE_LEVELS.critical ? "critical" : ratio >= STORAGE_LEVELS.warn ? "warn" : "ok";
 }
 
 async function loop(
@@ -180,20 +186,30 @@ export async function runDailyJob(store: JobStore, opts: RunOptions = {}): Promi
     log.error("daily job step failed", { step: "drop_partitions", err });
   }
 
-  // 4. Storage report (measure only; the signup pause is wired in P2.11c).
+  // 4. Storage report (measure only), then the guard: the SQL function decides the level from its own measurement and the
+  //    previous level (thresholds and hysteresis live in migration 0012 and lib/quotas.ts STORAGE_GUARD) and sets the flags.
   const storage: DailyJobResult["storage"] = { status: "ok" };
   try {
     storage.report = await store.storageReport();
-    storage.level = storageLevel(storage.report.eventsRatio);
-    if (storage.level !== "ok") log.warn("daily job: events storage over threshold", { ratio: storage.report.eventsRatio, level: storage.level });
   } catch (err) {
     storage.status = "error";
     storage.error = "step_failed";
     log.error("daily job step failed", { step: "storage_report", err });
   }
+  const guard: DailyJobResult["guard"] = { status: "ok" };
+  try {
+    guard.result = await store.applyStorageGuard();
+    guard.changed = guard.result.level !== guard.result.previousLevel;
+    if (guard.result.level !== "ok") log.warn("daily job: storage over threshold", { level: guard.result.level, ratio: guard.result.ratio });
+    if (guard.changed) log.warn("daily job: storage level changed", { from: guard.result.previousLevel, to: guard.result.level });
+  } catch (err) {
+    guard.status = "error";
+    guard.error = "step_failed";
+    log.error("daily job step failed", { step: "storage_guard", err });
+  }
 
   const loops = [events, content, orphanedContent, rollups];
-  const ok = partitions.status === "ok" && droppedPartitions.status === "ok" && storage.status === "ok" && loops.every((l) => l.status === "ok");
+  const ok = partitions.status === "ok" && droppedPartitions.status === "ok" && storage.status === "ok" && guard.status === "ok" && loops.every((l) => l.status === "ok");
   const result: DailyJobResult = {
     ok,
     complete: loops.every((l) => l.status === "ok" && l.drained),
@@ -203,6 +219,7 @@ export async function runDailyJob(store: JobStore, opts: RunOptions = {}): Promi
     purge: { events, content, orphanedContent, rollups },
     droppedPartitions,
     storage,
+    guard,
   };
   log.info("daily job finished", { ok: result.ok, complete: result.complete, durationMs: result.durationMs });
   return result;

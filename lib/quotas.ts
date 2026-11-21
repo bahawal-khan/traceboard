@@ -75,8 +75,13 @@ export const FLUSH_HINT_MS = {
   liveWindow: 15_000,
 } as const;
 
-/** Database-size guard thresholds as a fraction of the 1 GB Neon Free cap. */
-export const STORAGE_GUARD = { warnAt: 0.7, pauseSignupsAt: 0.85 } as const;
+/**
+ * Storage guard (P2.11c2), as a fraction of the budget: the larger of events size / the 600 MB events budget and database
+ * size / 1 GB. `warnAt`: conserve flag on (long flush_hint_ms). `pauseSignupsAt`: claim_user_slot refuses new users.
+ * Hysteresis: a level is left only `releaseMargin` below its threshold. The SQL (migration 0012, storage_level_for) holds the
+ * same numbers and tests/storage-guard-sql.test.ts keeps them equal.
+ */
+export const STORAGE_GUARD = { warnAt: 0.7, pauseSignupsAt: 0.85, releaseMargin: 0.05 } as const;
 
 /**
  * Inputs of the storage math behind `QUOTAS.eventsPerDayPerProject` and `contentRowsPerDayPerProject`
