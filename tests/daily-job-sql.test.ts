@@ -125,6 +125,12 @@ describe("0011 daily job SQL: bounded, idempotent, no caller-chosen windows", ()
     }
     expect(sql).not.toMatch(/^\s+EXECUTE\s+(?!format)/m); // no dynamic SQL built any other way
   });
+  it("every purge function validates its batch to 1..50000, so a caller can never ask for an unbounded delete", () => {
+    for (const fn of ["purge_expired_events", "purge_expired_content", "purge_orphaned_content", "purge_rollups"]) {
+      expect(body(fn), fn).toContain("p_batch IS NULL OR p_batch < 1 OR p_batch > 50000 THEN"); // " THEN" so 500000 does not match
+    }
+    expect(sql.match(/p_batch > 50000 THEN/g)).toHaveLength(4);
+  });
   it("the orphan check keys on project AND event id", () => {
     expect(body("purge_orphaned_content")).toContain("e.project_id = c.project_id AND e.event_id = c.event_id");
   });

@@ -65,6 +65,11 @@ describe("0012 storage guard: locked down", () => {
     expect(code).not.toMatch(/DELETE\s+FROM|TRUNCATE|EXECUTE\s+(format|'|")/i);
     expect(body("apply_storage_level")).toContain("WHERE public.app_state.value IS DISTINCT FROM excluded.value"); // idempotent: no write on a repeat
   });
+  it("every one of the three app_state upserts is a no-op on a repeat (the guard is on all of them, not just one)", () => {
+    const b = body("apply_storage_level");
+    expect(b.match(/INSERT INTO public\.app_state/g)).toHaveLength(3);
+    expect(b.match(/WHERE public\.app_state\.value IS DISTINCT FROM excluded\.value;/g)).toHaveLength(3);
+  });
   it("apply_storage_guard takes no argument (the caller cannot choose the level through the job path)", () => {
     expect(body("apply_storage_guard")).toMatch(/FUNCTION apply_storage_guard\(\)/);
   });

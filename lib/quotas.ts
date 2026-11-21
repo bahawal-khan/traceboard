@@ -8,8 +8,8 @@ export const QUOTAS = {
   eventsPerDayPerProject: 1_900,
   /**
    * Cap on stored (encrypted) content rows per project per day: 200 x 8,200 B x 4 days x 20 projects = 131 MB, 13% of
-   * the database at the MAXIMUM row size (2 KB in + 2 KB out), inside SIZING.contentShare (15%). NOT ENFORCED YET:
-   * the ingest statement must count and cap it (P2.11); until then do not offer content capture beyond the owner.
+   * the database at the MAXIMUM row size (2 KB in + 2 KB out), inside SIZING.contentShare (15%). ENFORCED by the ingest
+   * statement (usage_daily.content_rows and content_slots_left, P2.11c1): content past the cap is not stored, the events are.
    */
   contentRowsPerDayPerProject: 200,
   ingestRequestsPerDayPerProject: 3_000,
