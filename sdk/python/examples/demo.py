@@ -193,7 +193,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     f.write(json.dumps(e, sort_keys=True) + "\n")
             print("wrote %s" % args.out)
     elif flushed:
-        print("done. Open the dashboard: the traces should appear within a few seconds.")
+        print("done. The events were accepted by the server; the trace view comes in a later release.")
     else:
         print("some events are still queued (the server is slow or unreachable); the SDK will keep retrying while this process lives.")
     mon.shutdown()
