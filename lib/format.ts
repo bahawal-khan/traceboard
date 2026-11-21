@@ -89,3 +89,11 @@ export function formatUtc(date: Date | string | number | null | undefined): stri
   if (Number.isNaN(d.getTime())) return UNKNOWN;
   return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
+
+/** UTC calendar date ("2026-11-21"): the same text on server and browser, unlike toLocaleDateString (hydration drift). */
+export function formatUtcDate(date: Date | string | number | null | undefined): string {
+  if (date === null || date === undefined) return UNKNOWN;
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return UNKNOWN;
+  return d.toISOString().slice(0, 10);
+}

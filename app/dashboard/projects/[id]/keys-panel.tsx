@@ -1,8 +1,14 @@
 "use client";
 
+import { AlertCircle, Check, Copy, KeyRound, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { formatUtcDate } from "@/lib/format";
 
 interface Key {
   id: string;
@@ -26,6 +32,9 @@ const MESSAGES: Record<string, string> = {
   forbidden: "Request blocked. Reload the page and try again.",
   not_found: "That key or project no longer exists.",
 };
+
+/** 44 px tap targets on small screens, compact from the sm breakpoint up. */
+const TAP = "h-11 sm:h-9";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -83,48 +92,52 @@ export function KeysPanel({ projectId, initial, limit }: { projectId: string; in
   return (
     <div className="mt-6 space-y-6">
       {secret && (
-        <div role="alert" className="space-y-3 rounded-md border border-amber-500/60 bg-amber-500/10 p-4">
-          <p className="text-sm font-medium">Copy your new key now. You will not be able to see it again.</p>
-          <code className="block break-all rounded bg-background p-3 text-sm" data-testid="new-key">
-            {secret}
-          </code>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              className="h-11"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(secret);
-                  setCopied(true);
-                } catch {
-                  setError("Could not copy automatically. Select the key and copy it manually.");
-                }
-              }}
-            >
-              {copied ? "Copied" : "Copy key"}
-            </Button>
-            <Button
-              variant="outline"
-              className="h-11"
-              onClick={() => {
-                setSecret(null);
-                setCopied(false);
-              }}
-            >
-              I have saved it
-            </Button>
-          </div>
-        </div>
+        <Alert>
+          <TriangleAlert className="text-status-warning" aria-hidden />
+          <AlertTitle>Copy your new key now. You will not be able to see it again.</AlertTitle>
+          <AlertDescription className="space-y-3">
+            <code className="block break-all rounded-md bg-muted p-3 text-sm text-foreground" data-testid="new-key">
+              {secret}
+            </code>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                className={TAP}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(secret);
+                    setCopied(true);
+                  } catch {
+                    setError("Could not copy automatically. Select the key and copy it manually.");
+                  }
+                }}
+              >
+                {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+                {copied ? "Copied" : "Copy key"}
+              </Button>
+              <Button
+                variant="outline"
+                className={TAP}
+                onClick={() => {
+                  setSecret(null);
+                  setCopied(false);
+                }}
+              >
+                I have saved it
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
       )}
 
-      <fieldset className="space-y-3 rounded-md border p-4" disabled={busy || active >= limit}>
+      <fieldset className="space-y-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10" disabled={busy || active >= limit}>
         <legend className="px-1 text-sm font-medium">New key</legend>
-        <div>
+        <div className="space-y-1.5">
           <label htmlFor="key-name" className="text-sm">
             Name <span className="text-muted-foreground">(optional)</span>
           </label>
-          <input
+          <Input
             id="key-name"
-            className="mt-1 h-11 w-full rounded-md border bg-background px-3 text-base"
+            className={TAP}
             placeholder="e.g. production, CI"
             value={name}
             maxLength={60}
@@ -132,14 +145,13 @@ export function KeysPanel({ projectId, initial, limit }: { projectId: string; in
             onChange={(e) => setName(e.target.value)}
           />
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+        <div className="flex flex-col gap-1 sm:flex-row sm:gap-6">
           {SCOPES.map((s) => (
-            <label key={s.id} className="flex min-h-11 items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+            <label key={s.id} className="flex min-h-11 items-center gap-3 text-sm sm:min-h-9">
+              <Checkbox
                 className="size-5"
                 checked={scopes.includes(s.id)}
-                onChange={(e) => setScopes((cur) => (e.target.checked ? [...cur, s.id] : cur.filter((x) => x !== s.id)))}
+                onCheckedChange={(checked) => setScopes((cur) => (checked ? [...cur.filter((x) => x !== s.id), s.id] : cur.filter((x) => x !== s.id)))}
               />
               <span>
                 <strong>{s.label}</strong> <span className="text-muted-foreground">{s.help}</span>
@@ -147,43 +159,45 @@ export function KeysPanel({ projectId, initial, limit }: { projectId: string; in
             </label>
           ))}
         </div>
-        <Button className="h-11" disabled={busy || active >= limit || scopes.length === 0} onClick={create}>
+        <Button className={TAP} disabled={busy || active >= limit || scopes.length === 0} onClick={create}>
+          <KeyRound aria-hidden />
           {active >= limit ? "Key limit reached" : "Create key"}
         </Button>
       </fieldset>
 
       {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden />
+          <AlertDescription className="text-destructive">{error}</AlertDescription>
+        </Alert>
       )}
 
       {initial.length === 0 ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
           No keys yet. Create one to start sending traces.
         </p>
       ) : (
-        <ul className="divide-y rounded-md border">
+        <ul className="divide-y overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
           {initial.map((k) => (
             <li key={k.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">
                   {k.name || <span className="font-mono">{k.prefix}…</span>}{" "}
-                  {k.revokedAt && <span className="rounded bg-muted px-1.5 py-0.5 font-sans text-xs font-normal">revoked</span>}
+                  {k.revokedAt && <Badge variant="secondary">revoked</Badge>}
                 </p>
                 {k.name && <p className="font-mono text-xs text-muted-foreground">{k.prefix}…</p>}
                 <p className="text-xs text-muted-foreground">
-                  {k.scopes.join(", ")} · created {new Date(k.createdAt).toLocaleDateString()} ·{" "}
-                  {k.lastUsedAt ? `last used ${new Date(k.lastUsedAt).toLocaleDateString()}` : "never used"}
+                  {k.scopes.join(", ")} · created {formatUtcDate(k.createdAt)} ·{" "}
+                  {k.lastUsedAt ? `last used ${formatUtcDate(k.lastUsedAt)}` : "never used"}
                 </p>
               </div>
               {!k.revokedAt &&
                 (confirmId === k.id ? (
-                  <Button variant="destructive" className="h-11" disabled={busy} onClick={() => revoke(k.id)}>
+                  <Button variant="destructive" className={TAP} disabled={busy} onClick={() => revoke(k.id)}>
                     Confirm revoke
                   </Button>
                 ) : (
-                  <Button variant="outline" className="h-11" disabled={busy} onClick={() => setConfirmId(k.id)}>
+                  <Button variant="outline" className={TAP} disabled={busy} onClick={() => setConfirmId(k.id)}>
                     Revoke
                   </Button>
                 ))}

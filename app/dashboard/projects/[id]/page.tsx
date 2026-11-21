@@ -1,6 +1,6 @@
-import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { PageShell } from "@/components/dashboard/page-shell";
 import { NotFoundError } from "@/lib/repo/errors";
 import { listApiKeys } from "@/lib/repo/api-keys";
 import { ctxFromSession } from "@/lib/repo/ctx";
@@ -22,25 +22,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   }
 
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="flex items-center justify-between border-b px-4 py-3">
-        <Link href="/dashboard" className="font-semibold">
-          TraceBoard
-        </Link>
-        <UserButton />
-      </header>
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
-        <Link href="/dashboard" className="text-sm text-muted-foreground underline">
-          All projects
-        </Link>
-        <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight">{project.name}</h1>
-        <h2 className="mt-8 text-lg font-medium">API keys</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Use a key in the SDK or an OTLP exporter. Up to {QUOTAS.keysPerProject} active keys per project. A key is shown once, when
-          you create it.
-        </p>
-        <KeysPanel projectId={project.id} initial={keys} limit={QUOTAS.keysPerProject} />
-      </main>
-    </div>
+    <PageShell>
+      <Link href="/dashboard" className="inline-flex min-h-11 items-center text-sm text-muted-foreground underline underline-offset-4 sm:min-h-0">
+        All projects
+      </Link>
+      <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight">{project.name}</h1>
+      <h2 className="mt-8 text-lg font-medium">API keys</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Use a key in the SDK or an OTLP exporter. Up to {QUOTAS.keysPerProject} active keys per project. A key is shown once, when you
+        create it.
+      </p>
+      <KeysPanel projectId={project.id} initial={keys} limit={QUOTAS.keysPerProject} />
+    </PageShell>
   );
 }

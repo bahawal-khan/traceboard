@@ -8,6 +8,7 @@ import {
   formatInt,
   formatPercent,
   formatUtc,
+  formatUtcDate,
 } from "@/lib/format";
 
 describe("formatCostUsd", () => {
@@ -82,5 +83,14 @@ describe("formatUtc", () => {
     expect(formatUtc("2026-11-21T14:05:59Z")).toBe("2026-11-21 14:05 UTC");
     expect(formatUtc("nonsense")).toBe(UNKNOWN);
     expect(formatUtc(null)).toBe(UNKNOWN);
+  });
+});
+
+describe("formatUtcDate", () => {
+  it("is the UTC calendar date, independent of the machine time zone", () => {
+    expect(formatUtcDate("2026-11-21T23:59:59Z")).toBe("2026-11-21");
+    expect(formatUtcDate(new Date(Date.UTC(2026, 0, 2, 0, 0, 0)))).toBe("2026-01-02");
+    expect(formatUtcDate("nonsense")).toBe(UNKNOWN);
+    expect(formatUtcDate(undefined)).toBe(UNKNOWN);
   });
 });

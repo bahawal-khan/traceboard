@@ -1,13 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { Moon, Sun } from "lucide-react";
 import { ChartCard } from "@/components/charts/chart-card";
 import { StatTile } from "@/components/charts/stat-tile";
 import { StatusBadge } from "@/components/charts/status-badge";
 import { TimeSeriesChart } from "@/components/charts/time-series-chart";
 import { ProjectNav } from "@/components/dashboard/project-nav";
-import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { formatCompact, formatCostUsd, formatDuration, formatPercent } from "@/lib/format";
 
 // Deterministic fake data (no Math.random: server and client must render the same).
@@ -31,13 +29,6 @@ const tokenSeries = [
 ];
 
 export function DesignGallery() {
-  const [dark, setDark] = useState(false);
-  function toggle() {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle("dark", next);
-  }
-
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -45,10 +36,7 @@ export function DesignGallery() {
           <h1 className="text-2xl font-semibold tracking-tight">Chart kit (development only)</h1>
           <p className="text-sm text-muted-foreground">Fake, deterministic data. This page does not exist in production builds.</p>
         </div>
-        <Button variant="outline" onClick={toggle} aria-pressed={dark} className="min-h-11 sm:min-h-8">
-          {dark ? <Sun aria-hidden /> : <Moon aria-hidden />}
-          {dark ? "Light" : "Dark"}
-        </Button>
+        <ThemeToggle />
       </div>
 
       <ProjectNav

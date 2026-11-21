@@ -1,9 +1,13 @@
 "use client";
 
+import { AlertCircle, FolderPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { formatUtcDate } from "@/lib/format";
 
 interface Project {
   id: string;
@@ -18,6 +22,9 @@ const MESSAGES: Record<string, string> = {
   forbidden: "Request blocked. Reload the page and try again.",
   not_found: "That project no longer exists.",
 };
+
+/** 44 px tap targets on small screens, compact from the sm breakpoint up. */
+const TAP = "h-11 sm:h-9";
 
 async function call(url: string, method: string, body?: unknown): Promise<string | null> {
   try {
@@ -66,75 +73,83 @@ export function ProjectsPanel({ initial, limit }: { initial: Project[]; limit: n
         <label className="sr-only" htmlFor="new-project">
           New project name
         </label>
-        <input
+        <Input
           id="new-project"
-          className="h-11 flex-1 rounded-md border bg-background px-3 text-base"
+          className={`${TAP} sm:flex-1`}
           placeholder={atLimit ? "Project limit reached" : "New project name"}
           value={name}
           maxLength={60}
           disabled={atLimit || busy}
           onChange={(e) => setName(e.target.value)}
         />
-        <Button type="submit" className="h-11" disabled={atLimit || busy || name.trim() === ""}>
+        <Button type="submit" className={TAP} disabled={atLimit || busy || name.trim() === ""}>
+          <FolderPlus aria-hidden />
           Create project
         </Button>
       </form>
 
       {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden />
+          <AlertDescription className="text-destructive">{error}</AlertDescription>
+        </Alert>
       )}
 
       {initial.length === 0 ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
           No projects yet. Create one to get your API key and start sending traces.
         </p>
       ) : (
-        <ul className="divide-y rounded-md border">
+        <ul className="divide-y overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
           {initial.map((p) => (
-            <li key={p.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <li key={p.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
               {editing?.id === p.id ? (
                 <form
-                  className="flex flex-1 flex-col gap-2 sm:flex-row"
+                  className="flex flex-col gap-2 sm:flex-1 sm:flex-row"
                   onSubmit={async (e) => {
                     e.preventDefault();
                     if ((await run(() => call(`/api/dashboard/projects/${p.id}`, "PATCH", { name: editing.name }))) === null) setEditing(null);
                   }}
                 >
-                  <input
+                  <Input
                     aria-label="Project name"
-                    className="h-11 flex-1 rounded-md border bg-background px-3 text-base"
+                    className={`${TAP} sm:flex-1`}
                     value={editing.name}
                     maxLength={60}
                     onChange={(e) => setEditing({ id: p.id, name: e.target.value })}
                   />
-                  <Button type="submit" className="h-11" disabled={busy || editing.name.trim() === ""}>
-                    Save
-                  </Button>
-                  <Button type="button" variant="outline" className="h-11" onClick={() => setEditing(null)}>
-                    Cancel
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button type="submit" className={TAP} disabled={busy || editing.name.trim() === ""}>
+                      Save
+                    </Button>
+                    <Button type="button" variant="outline" className={TAP} onClick={() => setEditing(null)}>
+                      Cancel
+                    </Button>
+                  </div>
                 </form>
               ) : (
                 <>
                   <div className="min-w-0">
-                    <Link href={`/dashboard/projects/${p.id}`} className="block truncate font-medium underline-offset-4 hover:underline">
+                    <Link
+                      href={`/dashboard/projects/${p.id}`}
+                      className="-my-3 block truncate py-3 font-medium underline-offset-4 hover:underline sm:my-0 sm:py-0"
+                      title={p.name}
+                    >
                       {p.name}
                     </Link>
-                    <p className="text-xs text-muted-foreground">Created {new Date(p.createdAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-muted-foreground">Created {formatUtcDate(p.createdAt)}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <Link href={`/dashboard/projects/${p.id}`} className={buttonVariants({ variant: "outline", className: "h-11" })}>
+                  <div className="flex flex-wrap gap-2">
+                    <Link href={`/dashboard/projects/${p.id}`} className={buttonVariants({ variant: "outline", className: TAP })}>
                       API keys
                     </Link>
-                    <Button variant="outline" className="h-11" disabled={busy} onClick={() => setEditing({ id: p.id, name: p.name })}>
+                    <Button variant="outline" className={TAP} disabled={busy} onClick={() => setEditing({ id: p.id, name: p.name })}>
                       Rename
                     </Button>
                     {confirmId === p.id ? (
                       <Button
                         variant="destructive"
-                        className="h-11"
+                        className={TAP}
                         disabled={busy}
                         onClick={async () => {
                           await run(() => call(`/api/dashboard/projects/${p.id}`, "DELETE"));
@@ -144,7 +159,7 @@ export function ProjectsPanel({ initial, limit }: { initial: Project[]; limit: n
                         Confirm delete everything
                       </Button>
                     ) : (
-                      <Button variant="outline" className="h-11" disabled={busy} onClick={() => setConfirmId(p.id)}>
+                      <Button variant="outline" className={TAP} disabled={busy} onClick={() => setConfirmId(p.id)}>
                         Delete
                       </Button>
                     )}
