@@ -1,6 +1,7 @@
 """The Monitor: a bounded in-memory queue, a background flush thread, a flush at exit. Never raises into the host app."""
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import os
@@ -10,7 +11,7 @@ import threading
 import time
 import warnings
 import weakref
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ._config import ENV_API_KEY, USER_AGENT_PREFIX, Config, resolve_config
 from ._events import build_event
@@ -35,6 +36,10 @@ _MAX_POISON_ATTEMPTS = 5
 _AUTH_STATUSES = (401, 403)
 
 
+# Process-wide, never reused: numbers every flush thread this process starts (see _Core.thread_token).
+_THREAD_SEQ = itertools.count(1)
+
+
 class _Core(object):
     """Everything that must NOT survive a fork: the queue, the locks, the thread and the counters.
 
@@ -57,6 +62,11 @@ class _Core(object):
         self.send_lock = threading.Lock()
         self.queue = BoundedQueue(cfg.queue_size)
         self.thread: Optional[threading.Thread] = None
+        # Identity of the flush thread, set when it is started: (pid it was started in, kernel thread id, process-wide sequence
+        # number). Never the thread's `ident`: that is a pthread_t, an address the OS may hand out AGAIN, so a thread started in a
+        # forked child can legitimately get the same ident as the parent's thread that does not exist there. Tests and diagnostics
+        # use this token; the SDK's own logic uses the Thread object itself and the pid recorded in the core, nothing else.
+        self.thread_token: Optional[Tuple[int, Optional[int], int]] = None
         self.stopping = False
         self.closed = False
         # Current flush interval: starts at the configured value and follows the server's flush_hint_ms, clamped to
@@ -106,6 +116,7 @@ class _Core(object):
                 self.stats["errors"] += 1
                 return
             self.thread = thread
+            self.thread_token = (os.getpid(), getattr(thread, "native_id", None), next(_THREAD_SEQ))
 
     def thread_alive(self) -> bool:
         t = self.thread
@@ -492,9 +503,9 @@ class Monitor(object):
     def _thread_alive(self) -> bool:
         return self._holder is not None and self._holder.get().thread_alive()
 
-    def _thread_ident(self) -> Optional[int]:
-        t = None if self._holder is None else self._holder.get().thread
-        return None if t is None else t.ident
+    def _thread_token(self) -> Optional[Tuple[int, Optional[int], int]]:
+        """(pid, native thread id, sequence) of the CURRENT flush thread, set when it was started; None before the first start."""
+        return None if self._holder is None else self._holder.get().thread_token
 
     def _queue_len(self) -> int:
         return 0 if self._holder is None else len(self._holder.get().queue)

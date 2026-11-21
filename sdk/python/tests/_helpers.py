@@ -131,14 +131,48 @@ class FakeTransport(object):
 
 
 # ---- child-process entry points (module level so spawn/forkserver can import them) ---------------------------------
-def child_flush_own_event(mon: Any, marker: str, parent_thread_ident: Optional[int]) -> None:
+def fork_facts(mon: Any, parent_token: Any, started_empty: bool, tracked_before_flush: bool = True) -> Dict[str, Any]:
+    """What the child can tell about its Monitor, with the verdict on each condition separately (for failure messages).
+    "Own thread" is decided by the flush thread's TOKEN (pid it was started in, kernel thread id, sequence number), never by
+    Thread.ident: that is a pthread_t, an address the OS may reuse, so a child's new thread can share the parent's ident."""
+    token = mon._thread_token()
+    thread = getattr(mon._holder.get(), "thread", None) if mon._holder is not None else None
+    return {
+        "pid": os.getpid(),
+        "parent_pid": os.getppid(),
+        "started_empty": started_empty,
+        "thread_alive": mon._thread_alive(),
+        "token": token,
+        "parent_token": parent_token,
+        "token_started_in_this_process": token is not None and token[0] == os.getpid(),
+        "token_differs_from_parents": token is not None and token != parent_token,
+        "thread_ident": getattr(thread, "ident", None),
+        "thread_native_id": getattr(thread, "native_id", None),
+        "main_thread_ident": threading.get_ident(),
+        "queue_len": mon._queue_len(),
+    }
+
+
+def own_flush_thread(facts: Dict[str, Any]) -> bool:
+    return bool(facts["thread_alive"] and facts["token_started_in_this_process"] and facts["token_differs_from_parents"])
+
+
+def child_flush_own_event(mon: Any, marker: str, parent_token: Any, report: Any = None, parent_ident: Any = None) -> None:
     """The child tracks ONE event and flushes explicitly. It must start with an EMPTY queue (the parent's pending event is
-    not shared), and must have a thread of its own (a restarted flush thread) after tracking."""
+    not shared), and must have a thread of its own (a restarted flush thread) after tracking. If `report` (a Connection) is
+    given, the facts and the verdict on each condition are sent to the parent so a failure says exactly which one broke."""
     started_empty = mon._queue_len() == 0
     mon.track(name=marker, kind="custom")
-    own_thread = mon._thread_alive() and mon._thread_ident() != parent_thread_ident
+    facts = fork_facts(mon, parent_token, started_empty)
+    own_thread = own_flush_thread(facts)
     flushed = mon.flush(timeout=5)
+    facts.update(flush_ok=flushed, events_tracked=mon.stats["events_tracked"], ident_equals_parents=facts["thread_ident"] == parent_ident)
     ok = started_empty and own_thread and flushed and mon.stats["events_tracked"] == 1
+    if report is not None:
+        try:
+            report.send(facts)
+        except Exception:
+            pass
     sys.exit(0 if ok else 3 if not started_empty else 4 if not own_thread else 5)
 
 
