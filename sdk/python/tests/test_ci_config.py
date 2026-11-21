@@ -67,6 +67,13 @@ class TestCiConfig(unittest.TestCase):
         self.assertIn("dependencies = []", self.pyproject)
         self.assertNotRegex(self.pyproject, r"(?m)^\s*(openai|anthropic)\b")
 
+    def test_the_runner_has_a_python_39_build_while_39_is_in_the_matrix(self):
+        """`ubuntu-latest` (26.04) has no Python 3.9; actions/python-versions publishes 3.9 for 22.04 and 24.04 only."""
+        job = self.workflow.split("\n  sdk-python:", 1)[1]
+        runs_on = re.search(r"^\s+runs-on:\s*(\S+)", job, re.M).group(1)
+        if "3.9" in self.matrix_versions():
+            self.assertIn(runs_on, ("ubuntu-22.04", "ubuntu-24.04"), "3.9 needs a pinned runner image, not %s" % runs_on)
+
     def test_the_job_uses_no_secrets(self):
         job = self.workflow.split("\n  sdk-python:", 1)[1]
         self.assertNotIn("secrets.", job)
