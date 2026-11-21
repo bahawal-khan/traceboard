@@ -116,7 +116,7 @@ describe("GenAI-only filter: ancestors that arrive in a LATER request", () => {
 });
 
 // ---- the handler ----------------------------------------------------------------------------------------------------
-const okResult = (o: Partial<PersistResult> = {}): PersistResult => ({ inserted: 1, contentStored: 0, usage: { events: 1, requests: 1, costMicro: 0 }, signals: { lastViewedAt: null, conserve: false }, budgets: [], ...o });
+const okResult = (o: Partial<PersistResult> = {}): PersistResult => ({ inserted: 1, contentStored: 0, contentDropped: 0, usage: { events: 1, requests: 1, costMicro: 0 }, signals: { lastViewedAt: null, conserve: false }, budgets: [], ...o });
 let persisted: Array<Array<Record<string, unknown>>>;
 let logs: string[];
 let store: EventStore & { persist: ReturnType<typeof vi.fn> };

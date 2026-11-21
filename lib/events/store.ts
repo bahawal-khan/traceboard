@@ -39,6 +39,8 @@ export interface PersistResult {
   inserted: number;
   /** Content rows stored (encrypted) for newly inserted events; 0 when capture is off, no key is set, or all were duplicates. */
   contentStored: number;
+  /** Content rows NOT stored because the project reached its daily content cap (`QUOTAS.contentRowsPerDayPerProject`); 0 otherwise. */
+  contentDropped: number;
   /** null only for an empty batch, which does not touch the database. */
   usage: UsageToday | null;
   /** null only for an empty batch. */

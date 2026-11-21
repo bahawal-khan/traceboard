@@ -90,11 +90,13 @@ export function createIngestHandler(deps: IngestDeps) {
       const { accepted, rejected } = normalizeEvents(parsed.data.events, deps.prices, now());
 
       let inserted = 0;
+      let contentDropped = 0;
       let verdict = budgetVerdict([]);
       let signals = null;
       if (accepted.length > 0) {
         const result = await deps.store.persist(ctx, accepted);
         inserted = result.inserted;
+        contentDropped = result.contentDropped;
         signals = result.signals;
         verdict = budgetVerdict(result.budgets);
         if (result.usage) deps.quota.record(projectId, result.usage);
@@ -112,7 +114,15 @@ export function createIngestHandler(deps: IngestDeps) {
         ms: now() - started,
       });
       return json(
-        { accepted: accepted.length, duplicates: accepted.length - inserted, rejected, guard: verdict, flush_hint_ms: flushHintMs(signals, now(), deps.random) },
+        {
+          accepted: accepted.length,
+          duplicates: accepted.length - inserted,
+          rejected,
+          guard: verdict,
+          flush_hint_ms: flushHintMs(signals, now(), deps.random),
+          // Only present when the daily content cap cut content off, so the response shape is unchanged otherwise.
+          ...(contentDropped > 0 ? { content_dropped: contentDropped } : {}),
+        },
         202,
         requestId,
       );

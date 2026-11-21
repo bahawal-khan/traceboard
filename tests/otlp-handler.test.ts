@@ -30,7 +30,7 @@ const post = (body: unknown, headers: Record<string, string> = {}) =>
     headers: { "content-type": "application/json", authorization: `Bearer ${KEY}`, ...headers },
     body: typeof body === "string" || body instanceof Uint8Array ? (body as BodyInit) : JSON.stringify(body),
   });
-const okResult = (o: Partial<PersistResult> = {}): PersistResult => ({ inserted: 1, contentStored: 0, usage: { events: 1, requests: 1, costMicro: 0 }, signals: { lastViewedAt: null, conserve: false }, budgets: [], ...o });
+const okResult = (o: Partial<PersistResult> = {}): PersistResult => ({ inserted: 1, contentStored: 0, contentDropped: 0, usage: { events: 1, requests: 1, costMicro: 0 }, signals: { lastViewedAt: null, conserve: false }, budgets: [], ...o });
 
 let logs: string[];
 let persisted: Array<{ rows: Array<Record<string, unknown>> }>;
