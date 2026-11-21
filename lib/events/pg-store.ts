@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { contentCipherFromEnv, prepareContent, type ContentCipher, type PreparedContent } from "@/lib/ingest/content";
 import { LATENCY_BOUNDS_MS, randomShard, ROLLUP_SHARDS } from "@/lib/ingest/rollup";
-import { RETENTION } from "@/lib/quotas";
+import { QUOTAS, RETENTION } from "@/lib/quotas";
 import type { NormalizedEvent } from "@/lib/ingest/normalize";
 import { withTenant, TenantError, type ApiKeyCtx } from "@/lib/repo/tenant";
 import { isMissingPartitionError, MissingPartitionError, type EventStore, type PersistResult } from "./store";
@@ -46,6 +46,7 @@ function toWire(e: NormalizedEvent, content: PreparedContent | null) {
 const resultSchema = z.object({
   inserted: z.coerce.number().int().min(0),
   content_stored: z.coerce.number().int().min(0),
+  content_dropped: z.coerce.number().int().min(0),
   last_viewed_at: z.union([z.date(), z.string()]).nullable(),
   conserve: z.boolean(),
   usage: z.object({ events: z.coerce.number(), requests: z.coerce.number(), cost_micro: z.coerce.number() }),
@@ -126,7 +127,7 @@ export class PgEventStore implements EventStore {
     if (!ctx.scopes.includes("ingest")) throw new TenantError("persist: key lacks the ingest scope");
     const projectId = ctx.projectIds[0];
     if (ctx.projectIds.length !== 1 || !projectId) throw new TenantError("persist: an API key context has exactly one project");
-    if (events.length === 0) return { inserted: 0, contentStored: 0, usage: null, signals: null, budgets: [] };
+    if (events.length === 0) return { inserted: 0, contentStored: 0, contentDropped: 0, usage: null, signals: null, budgets: [] };
     const hasContent = events.some((e) => e.content && (e.content.input !== undefined || e.content.output !== undefined));
     const cipher = hasContent ? this.cipher() : null; // no key: content is dropped, never stored in clear
     const payload = JSON.stringify(
@@ -237,26 +238,34 @@ export class PgEventStore implements EventStore {
             lat_b10 = metrics_hourly.lat_b10 + excluded.lat_b10, lat_b11 = metrics_hourly.lat_b11 + excluded.lat_b11
           returning 1
         ),
-        u as (
-          insert into usage_daily (project_id, day, events, requests, cost_micro)
-          select ${projectId}::uuid, (now() at time zone 'UTC')::date, (select count(*) from ins), 1, (select coalesce(sum(cost_micro), 0) from ins)
-          on conflict (project_id, day) do update set
-            events = usage_daily.events + excluded.events,
-            requests = usage_daily.requests + excluded.requests,
-            cost_micro = usage_daily.cost_micro + excluded.cost_micro
-          returning events, requests, cost_micro
-        ),
-        c as (
-          insert into event_content (event_id, project_id, input_text, output_text, redaction_report, expires_at)
-          select distinct on (i.event_id) i.event_id, ${projectId}::uuid, s.c_in, s.c_out, s.c_rep,
-                 now() + make_interval(days => least(p.content_retention_days, ${RETENTION.contentDays}::int))
+        cw as (
+          select distinct on (i.event_id) i.event_id, s.c_in, s.c_out, s.c_rep,
+                 now() + make_interval(days => least(p.content_retention_days, ${RETENTION.contentDays}::int)) as expires_at
             from ins i
             join src s on s.event_id::uuid = i.event_id and s.occurred_at::timestamptz = i.occurred_at
             join projects p on p.id = ${projectId}::uuid and p.capture_content
            where s.c_in is not null or s.c_out is not null
            order by i.event_id
+        ),
+        c as (
+          insert into event_content (event_id, project_id, input_text, output_text, redaction_report, expires_at)
+          select w.event_id, ${projectId}::uuid, w.c_in, w.c_out, w.c_rep, w.expires_at
+            from cw w
+           order by w.event_id
+           limit (select content_slots_left(${projectId}::uuid, ${QUOTAS.contentRowsPerDayPerProject}::int))
           on conflict (project_id, event_id) do nothing
           returning 1
+        ),
+        u as (
+          insert into usage_daily (project_id, day, events, requests, cost_micro, content_rows)
+          select ${projectId}::uuid, (now() at time zone 'UTC')::date, (select count(*) from ins), 1, (select coalesce(sum(cost_micro), 0) from ins),
+                 (select count(*) from c)
+          on conflict (project_id, day) do update set
+            events = usage_daily.events + excluded.events,
+            requests = usage_daily.requests + excluded.requests,
+            cost_micro = usage_daily.cost_micro + excluded.cost_micro,
+            content_rows = usage_daily.content_rows + excluded.content_rows
+          returning events, requests, cost_micro
         ),
         bk as (
           select k.budget_id, k.period_key, sum(k.cost_micro) as spent
@@ -283,6 +292,7 @@ export class PgEventStore implements EventStore {
         )
         select (select count(*) from ins)::int as inserted,
                (select count(*) from c)::int as content_stored,
+               ((select count(*) from cw) - (select count(*) from c))::int as content_dropped,
                (select p.last_viewed_at from projects p where p.id = ${projectId}::uuid) as last_viewed_at,
                coalesce((select value = 'true'::jsonb from app_state where key = 'conserve'), false) as conserve,
                (select to_jsonb(u) from u) as usage,
@@ -295,6 +305,7 @@ export class PgEventStore implements EventStore {
     return {
       inserted: r.inserted,
       contentStored: r.content_stored,
+      contentDropped: r.content_dropped,
       signals: { lastViewedAt: r.last_viewed_at === null ? null : new Date(r.last_viewed_at), conserve: r.conserve },
       usage: { events: r.usage.events, requests: r.usage.requests, costMicro: r.usage.cost_micro },
       budgets: r.budgets.map((b) => ({

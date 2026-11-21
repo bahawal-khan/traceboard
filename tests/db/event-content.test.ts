@@ -9,7 +9,7 @@ import { DecryptionError, looksEncrypted } from "@/lib/crypto";
 import { PgEventStore } from "@/lib/events/pg-store";
 import { contentAad, createContentCipher } from "@/lib/ingest/content";
 import type { NormalizedEvent } from "@/lib/ingest/normalize";
-import { RETENTION } from "@/lib/quotas";
+import { QUOTAS, RETENTION } from "@/lib/quotas";
 import { createApiKey } from "@/lib/repo/api-keys";
 import { ctxFromApiKey, ctxFromSession } from "@/lib/repo/ctx";
 import { createProject } from "@/lib/repo/projects";
@@ -167,5 +167,73 @@ run("event content (database)", () => {
     const rows = await sql`select a.attname from pg_index i join pg_attribute a on a.attrelid = i.indrelid and a.attnum = any(i.indkey)
       where i.indrelid = 'public.event_content'::regclass and i.indisprimary order by a.attname`;
     expect(rows.map((r) => r.attname)).toEqual(["event_id", "project_id"]);
+  });
+
+  describe("daily content cap (QUOTAS.contentRowsPerDayPerProject)", () => {
+    const CAP = QUOTAS.contentRowsPerDayPerProject;
+    const many = (n: number) => Array.from({ length: n }, () => ev());
+    const counters = async (x: { owner: string; project: string }) =>
+      (await q(x, "select content_rows::int as rows, events::int as events from usage_daily where day = (now() at time zone 'UTC')::date"))[0]!;
+
+    it("stores up to the cap, drops the rest, and still stores EVERY event", async () => {
+      const a = await tenant({ capture: true });
+      const r = await store.persist(a.ctx, many(CAP + 5));
+      expect(r.inserted).toBe(CAP + 5);
+      expect(r.contentStored).toBe(CAP);
+      expect(r.contentDropped).toBe(5);
+      expect(await q(a, "select count(*)::int as n from event_content")).toEqual([{ n: CAP }]);
+      expect(await counters(a)).toEqual({ rows: CAP, events: CAP + 5 });
+    });
+
+    it("once the cap is reached, later batches store no content and report it dropped; counters do not move", async () => {
+      const a = await tenant({ capture: true });
+      await store.persist(a.ctx, many(CAP));
+      const r = await store.persist(a.ctx, many(3));
+      expect(r).toMatchObject({ inserted: 3, contentStored: 0, contentDropped: 3 });
+      expect(await counters(a)).toEqual({ rows: CAP, events: CAP + 3 });
+    });
+
+    it("fills the remaining slots exactly (cap - 2 stored, then a batch of 5 keeps 2 and drops 3)", async () => {
+      const a = await tenant({ capture: true });
+      expect((await store.persist(a.ctx, many(CAP - 2))).contentStored).toBe(CAP - 2);
+      const r = await store.persist(a.ctx, many(5));
+      expect(r).toMatchObject({ contentStored: 2, contentDropped: 3 });
+      expect((await counters(a)).rows).toBe(CAP);
+    });
+
+    it("duplicates, events without content, and projects with capture off consume no slots and are not reported as dropped", async () => {
+      const a = await tenant({ capture: true });
+      const batch = many(4);
+      await store.persist(a.ctx, batch);
+      const dup = await store.persist(a.ctx, batch);
+      expect(dup).toMatchObject({ inserted: 0, contentStored: 0, contentDropped: 0 });
+      const none = await store.persist(a.ctx, [ev({ content: null }), ev({ content: {} })]);
+      expect(none).toMatchObject({ contentStored: 0, contentDropped: 0 });
+      expect((await counters(a)).rows).toBe(4);
+
+      const off = await tenant();
+      const r = await store.persist(off.ctx, many(3));
+      expect(r).toMatchObject({ contentStored: 0, contentDropped: 0 });
+      expect((await counters(off)).rows).toBe(0);
+    });
+
+    it("the cap is per project: another tenant at its cap does not affect this one, and it sees only its own counter", async () => {
+      const a = await tenant({ capture: true });
+      const b = await tenant({ capture: true });
+      await store.persist(a.ctx, many(CAP));
+      expect((await store.persist(b.ctx, many(2))).contentStored).toBe(2);
+      expect((await counters(b)).rows).toBe(2);
+      // content_slots_left is SECURITY INVOKER: under A's session B's counter is invisible (RLS), so it reports a full allowance.
+      const [mine] = await raw(a.owner, [a.project], (t) => [t`select content_slots_left(${b.project}::uuid, ${CAP}::int) as n`]).then((r) => r[1] as { n: number }[]);
+      expect(mine!.n).toBe(CAP);
+    });
+
+    it("the cap counts today's UTC day only: yesterday's counter does not block today", async () => {
+      const a = await tenant({ capture: true });
+      await store.persist(a.ctx, many(CAP));
+      await raw(a.owner, [a.project], (t) => [t`update usage_daily set day = day - 1 where project_id = ${a.project}`]);
+      const r = await store.persist(a.ctx, many(2));
+      expect(r).toMatchObject({ contentStored: 2, contentDropped: 0 });
+    });
   });
 });

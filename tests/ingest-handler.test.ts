@@ -23,7 +23,7 @@ const post = (body: unknown, headers: Record<string, string> = {}) =>
 
 const okResult = (o: Partial<PersistResult> = {}): PersistResult => ({
   inserted: 1,
-  contentStored: 0,
+  contentStored: 0, contentDropped: 0,
   usage: { events: 1, requests: 1, costMicro: 0 },
   signals: { lastViewedAt: null, conserve: false },
   budgets: [],
@@ -64,6 +64,17 @@ const body = async (r: Response) => (await r.json()) as Record<string, unknown>;
 
 beforeEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("POST /api/ingest: content cap", () => {
+  it("adds content_dropped to the 202 only when the daily content cap cut content off", async () => {
+    const handler = build();
+    store.persist.mockImplementationOnce(async (_c: ApiKeyCtx, rows: readonly unknown[]) => okResult({ inserted: rows.length, contentDropped: 3 }));
+    const capped = await body(await handler(post({ events: [ev()] })));
+    expect(capped.content_dropped).toBe(3);
+    const normal = await body(await handler(post({ events: [ev()] })));
+    expect(normal).not.toHaveProperty("content_dropped");
+  });
 });
 
 describe("POST /api/ingest: success", () => {

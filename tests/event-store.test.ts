@@ -6,6 +6,8 @@ vi.mock("@/lib/db/client", () => ({ getSql: () => ({ transaction: mocks.transact
 
 import { isRetryableTxError, PgEventStore } from "@/lib/events/pg-store";
 import { isMissingPartitionError, MissingPartitionError } from "@/lib/events/store";
+import { QUOTAS } from "@/lib/quotas";
+import { checkCteOrder } from "./helpers/cte-order";
 import type { NormalizedEvent } from "@/lib/ingest/normalize";
 import { contentAad, createContentCipher } from "@/lib/ingest/content";
 import { issueCtx, TenantError, type ApiKeyCtx } from "@/lib/repo/tenant";
@@ -28,6 +30,7 @@ const ev = (o: Partial<NormalizedEvent> = {}): NormalizedEvent => ({
 const RESULT = {
   inserted: 3,
   content_stored: 0,
+  content_dropped: 0,
   last_viewed_at: null,
   conserve: false,
   usage: { events: 10, requests: 2, cost_micro: 500 },
@@ -51,7 +54,7 @@ describe("PgEventStore (statement shape; no database)", () => {
     const r = await new PgEventStore().persist(ctx(), [ev(), ev({ eventId: "3f0c1b2e-8a64-4d1f-9c7e-5b2a6d9e1f41" })]);
     expect(r).toEqual({
       inserted: 3,
-      contentStored: 0,
+      contentStored: 0, contentDropped: 0,
       signals: { lastViewedAt: null, conserve: false },
       usage: { events: 10, requests: 2, costMicro: 500 },
       budgets: [{ budgetId: "44444444-4444-4444-8444-444444444444", scope: "project", period: "day", limitUsd: "5", action: "block", periodKey: "2026-11-20", spentMicro: 123456 }],
@@ -62,6 +65,25 @@ describe("PgEventStore (statement shape; no database)", () => {
     const insert = seen[1]!;
     expect(insert.text).toContain("on conflict (project_id, event_id, occurred_at) do nothing");
     expect(insert.text).not.toContain("3f0c1b2e"); // data never appears in the SQL text
+  });
+
+  it("enforces the daily content cap in the same statement: capped insert, counter in usage_daily, dropped count; cap is a bound parameter", async () => {
+    await new PgEventStore().persist(ctx(), [ev()]);
+    const insert = seen[1]!;
+    expect(insert.text).toMatch(/limit \(select content_slots_left\(\?::uuid, \?::int\)\)/);
+    expect(insert.values).toContain(QUOTAS.contentRowsPerDayPerProject);
+    expect(insert.text).toContain("content_rows = usage_daily.content_rows + excluded.content_rows");
+    expect(insert.text).toMatch(/\(select count\(\*\) from cw\) - \(select count\(\*\) from c\)\)::int as content_dropped/);
+  });
+
+  it("the ingest statement's WITH list is well ordered: every CTE reads only earlier CTEs or known tables (P2.11c1 regression)", async () => {
+    await new PgEventStore().persist(ctx(), [ev()]);
+    const { names, problems } = checkCteOrder(seen[1]!.text, ["events", "projects", "budgets", "app_state", "metrics_minute", "metrics_hourly", "usage_daily", "event_content", "budget_usage"]);
+    expect(problems).toEqual([]);
+    // c (content insert) must come before u (usage_daily upsert, which counts c's rows) and the final select.
+    expect(names).toEqual(["src", "ins", "ev", "m", "h", "cw", "c", "u", "bk", "bu"]);
+    expect(names.indexOf("cw")).toBeLessThan(names.indexOf("c"));
+    expect(names.indexOf("c")).toBeLessThan(names.indexOf("u"));
   });
 
   it("takes project_id from the context, never from the rows", async () => {
@@ -84,7 +106,7 @@ describe("PgEventStore (statement shape; no database)", () => {
   });
 
   it("does not touch the database for an empty batch", async () => {
-    expect(await new PgEventStore().persist(ctx(), [])).toEqual({ inserted: 0, contentStored: 0, usage: null, signals: null, budgets: [] });
+    expect(await new PgEventStore().persist(ctx(), [])).toEqual({ inserted: 0, contentStored: 0, contentDropped: 0, usage: null, signals: null, budgets: [] });
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 

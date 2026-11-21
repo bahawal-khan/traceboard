@@ -87,7 +87,7 @@ describe.skipIf(!present)("OTLP protobuf from the real Python exporter", () => {
     const store: EventStore = {
       persist: vi.fn(async (_c: ApiKeyCtx, rows: readonly unknown[]) => {
         persisted.push([...rows] as Array<Record<string, unknown>>);
-        return { inserted: rows.length, contentStored: 0, usage: { events: rows.length, requests: 1, costMicro: 0 }, signals: { lastViewedAt: null, conserve: false }, budgets: [] } satisfies PersistResult;
+        return { inserted: rows.length, contentStored: 0, contentDropped: 0, usage: { events: rows.length, requests: 1, costMicro: 0 }, signals: { lastViewedAt: null, conserve: false }, budgets: [] } satisfies PersistResult;
       }),
     };
     const ctx = issueCtx<ApiKeyCtx>({ kind: "apiKey", ownerId: null, projectIds: ["11111111-1111-4111-8111-111111111111"], keyId: "22222222-2222-4222-8222-222222222222", scopes: ["ingest"], readOnly: false });
