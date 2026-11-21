@@ -2,6 +2,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { buildCsp } from "@/lib/security/csp";
 import { isApiKeyRoute } from "@/lib/security/api-key-routes";
+import { isCronRoute } from "@/lib/security/cron-routes";
 import { clerkCspSources } from "@/lib/security/clerk";
 import { REQUEST_ID_HEADER, requestIdFrom } from "@/lib/request-id";
 
@@ -46,12 +47,13 @@ const clerk = clerkMiddleware(async (auth, request) => {
 });
 
 /**
- * API-key routes (/api/ingest, /api/otlp/*) skip Clerk entirely: they authenticate themselves, and Clerk
- * must not look at their Authorization header. They still get the security headers and a request id.
+ * API-key routes (/api/ingest, /api/otlp/*) and cron routes (/api/jobs/*, CRON_SECRET bearer) skip Clerk entirely: they
+ * authenticate themselves, and Clerk must not look at their Authorization header. They still get the security headers and a request id.
  * Everything else goes through Clerk exactly as before.
  */
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
-  if (isApiKeyRoute(request.nextUrl.pathname)) return withSecurity(request);
+  const path = request.nextUrl.pathname;
+  if (isApiKeyRoute(path) || isCronRoute(path)) return withSecurity(request);
   return clerk(request, event);
 }
 

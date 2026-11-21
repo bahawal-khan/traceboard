@@ -9,6 +9,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 
 import proxy from "@/proxy";
 import { isApiKeyRoute } from "@/lib/security/api-key-routes";
+import { isCronRoute } from "@/lib/security/cron-routes";
 
 const event = {} as Parameters<typeof proxy>[1];
 const req = (path: string, headers: Record<string, string> = {}) => new NextRequest(`http://localhost${path}`, { method: "POST", headers });
@@ -22,6 +23,15 @@ describe("isApiKeyRoute", () => {
   });
 });
 
+describe("isCronRoute", () => {
+  it("matches /api/jobs and its sub-paths only", () => {
+    for (const p of ["/api/jobs", "/api/jobs/", "/api/jobs/daily"]) expect(isCronRoute(p), p).toBe(true);
+    for (const p of ["/api/jobsx", "/api/dashboard/jobs", "/api/ingest", "/jobs/daily", "/API/jobs/daily", "/x/api/jobs/daily", "/api"]) {
+      expect(isCronRoute(p), p).toBe(false);
+    }
+  });
+});
+
 describe("proxy", () => {
   beforeEach(() => clerk.handler.mockClear());
 
@@ -31,6 +41,13 @@ describe("proxy", () => {
       expect(res, path).toBeDefined();
     }
     expect(clerk.handler).not.toHaveBeenCalled();
+  });
+
+  it("never hands /api/jobs/* to Clerk and passes the cron bearer through untouched", async () => {
+    const res = (await proxy(req("/api/jobs/daily", { authorization: "Bearer cron-secret-value" }), event)) as Response;
+    expect(clerk.handler).not.toHaveBeenCalled();
+    expect(res.headers.get("x-middleware-request-authorization")).toBe("Bearer cron-secret-value");
+    expect(res.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it("still applies the CSP and security headers and a request id to those routes", async () => {
@@ -55,7 +72,7 @@ describe("proxy", () => {
   });
 
   it("sends every other path through Clerk exactly as before", async () => {
-    for (const path of ["/dashboard", "/api/dashboard/projects", "/api/ingestx", "/", "/sign-in"]) {
+    for (const path of ["/dashboard", "/api/dashboard/projects", "/api/ingestx", "/api/jobsx", "/", "/sign-in"]) {
       clerk.handler.mockClear();
       await proxy(req(path), event);
       expect(clerk.handler, path).toHaveBeenCalledTimes(1);

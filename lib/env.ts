@@ -23,6 +23,8 @@ const optionalString = z
 export const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   MIGRATION_DATABASE_URL: optionalString, // CI only, never in the Vercel runtime
+  /** app_job connection (pooled host): the daily job only. Optional here; lib/db/job-client.ts requires it when the job runs. */
+  JOB_DATABASE_URL: optionalString,
   CLERK_SECRET_KEY: z.string().min(1),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
   CRON_SECRET: z.string().min(16),
