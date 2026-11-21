@@ -1,7 +1,8 @@
 -- Read-only queries for the manual end-to-end check of the ingest API, the Python SDK demo and the OTLP endpoint.
 -- Run as the migrator role (it has read-only maintenance policies on these tables; the runtime role would need a tenant context):
 --
---   psql "$MIGRATION_DATABASE_URL" -v project="'<project uuid from the dashboard URL>'" -f scripts/e2e-check.sql
+--   DB_URL="$(grep '^MIGRATION_DATABASE_URL=' .env.local | cut -d= -f2-)"   (never `source .env.local`)
+--   PGPORT=5432 psql -p 5432 "$DB_URL" -v project="'<project uuid from the dashboard URL>'" -f scripts/e2e-check.sql
 --
 -- Nothing here changes data and nothing here prints a secret (api_keys is not queried). Prompt text is never stored by default,
 -- so only hashes, counts and metadata appear.
@@ -18,9 +19,10 @@ select occurred_at, provider, model, input_tokens, output_tokens, cached_tokens,
 \echo '== 3. the demo run with a failing tool: status error and a redacted message (no email address)'
 select occurred_at, kind, name, status, error from events where project_id = :project::uuid and status = 'error' order by occurred_at desc limit 5;
 
-\echo '== 4. the looping demo run: one search_docs call repeated with the SAME args_hash (this is what Guard will stop in Phase 4)'
-select args_hash, count(*) as repeats from events
- where project_id = :project::uuid and name = 'search_docs' and args_hash is not null group by args_hash order by repeats desc limit 3;
+\echo '== 4. the looping demo run: one search_docs call repeated with the SAME args_hash INSIDE ONE trace (this is what Guard will stop in Phase 4)'
+select trace_id, args_hash, count(*) as repeats from events
+ where project_id = :project::uuid and name = 'search_docs' and args_hash is not null and trace_id is not null
+ group by trace_id, args_hash order by repeats desc limit 3;
 
 \echo '== 5. OTLP spans (run sdk/python/examples/otlp_demo.py): expect 4 rows per run; the plain HTTP span is dropped by the GenAI-only filter'
 select occurred_at, kind, name, model, provider, input_tokens, output_tokens, cached_tokens, ttft_ms, status, thread_id, span_id, parent_id

@@ -143,7 +143,8 @@ class TestCli(unittest.TestCase):
             self.assertEqual(code, 0, text)
             sent = [e for r in srv.requests for e in r["body"]["events"]]
             self.assertGreater(len(sent), 10)
-            self.assertIn("Open the dashboard", text)
+            self.assertIn("events were accepted", text)
+            self.assertNotIn("dashboard", text)
 
 
 if __name__ == "__main__":
