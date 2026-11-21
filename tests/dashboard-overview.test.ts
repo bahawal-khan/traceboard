@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildOverview, RANGE_SPEC } from "@/lib/dashboard/overview";
+import { buildOverview, overviewWindow, RANGE_SPEC } from "@/lib/dashboard/overview";
 import { percentileFromBuckets } from "@/lib/dashboard/percentile";
 import type { RollupRow } from "@/lib/dashboard/types";
 import { getDemoOverview, getDemoSnapshot } from "@/lib/demo";
@@ -112,6 +112,85 @@ describe("buildOverview", () => {
   });
   it("passes the quota through", () => {
     expect(buildOverview({ ...base, rows: [] }).quota).toEqual({ eventsToday: 5, eventsLimit: 1900 });
+  });
+  it("flags EACH bucket that holds unpriced events as a cost lower bound, and only those", () => {
+    const o = buildOverview({
+      ...base,
+      rows: [
+        row({ bucket: newest, model: "priced", calls: 4, costMicro: 1_000 }),
+        row({ bucket: newest, model: "mystery-7b", calls: 6 }),
+        row({ bucket: newest - HOUR, model: "priced", calls: 2, costMicro: 300 }),
+        row({ bucket: newest - 2 * HOUR, model: "", calls: 9 }), // spans without a model are not "unpriced"
+        row({ bucket: newest - 3 * HOUR, model: "mystery-7b", calls: 0 }), // no calls, nothing to flag
+      ],
+    });
+    const at = (i: number) => o.series[o.series.length - 1 - i]!;
+    expect([at(0).costLowerBound, at(0).unpricedCalls]).toEqual([true, 6]);
+    expect([at(1).costLowerBound, at(1).unpricedCalls]).toEqual([false, 0]);
+    expect([at(2).costLowerBound, at(2).unpricedCalls]).toEqual([false, 0]);
+    expect([at(3).costLowerBound, at(3).unpricedCalls]).toEqual([false, 0]);
+    expect(o.series.filter((p) => p.costLowerBound)).toHaveLength(1);
+    expect(at(0).costMicro).toBe(1_000); // the flagged bucket keeps its known cost; it does not become null or zero
+  });
+  it("a bucket's flagged calls add up to the overview's unpricedCalls", () => {
+    const o = buildOverview({
+      ...base,
+      rows: [row({ bucket: newest, model: "x-1", calls: 3 }), row({ bucket: newest - HOUR, model: "x-1", calls: 4 }), row({ bucket: newest - HOUR, model: "x-2", calls: 5 })],
+    });
+    expect(o.series.reduce((s, p) => s + p.unpricedCalls, 0)).toBe(o.unpricedCalls);
+    expect(o.unpricedCalls).toBe(12);
+  });
+  it("passes the truncated flag through, false by default", () => {
+    expect(buildOverview({ ...base, rows: [] }).truncated).toBe(false);
+    expect(buildOverview({ ...base, rows: [], truncated: true }).truncated).toBe(true);
+  });
+  it("overviewWindow is the window buildOverview lays out", () => {
+    for (const range of ["24h", "7d"] as const) {
+      const w = overviewWindow(range, now);
+      const o = buildOverview({ ...base, range, rows: [] });
+      expect([o.from, o.to, o.series.length]).toEqual([w.from, w.to, w.buckets]);
+      expect(w.to - w.from).toBe(w.buckets * w.bucketMs);
+    }
+  });
+});
+
+describe("buildOverview does not depend on the order of the rows", () => {
+  const now = Date.UTC(2026, 10, 21, 12, 30, 0);
+  const newest = Date.UTC(2026, 10, 21, 12, 0, 0);
+  const rows = [
+    row({ bucket: newest, model: "priced", calls: 4, errors: 1, inputTokens: 40, outputTokens: 9, costMicro: 1_000, latSumMs: 800, lat: lat([2, 3], [4, 1]) }),
+    row({ bucket: newest, model: "mystery-7b", calls: 6, inputTokens: 5, lat: lat([6, 6]) }),
+    row({ bucket: newest, model: "", calls: 3, lat: lat([0, 3]) }),
+    row({ bucket: newest - HOUR, model: "priced", calls: 2, costMicro: 300, lat: lat([2, 2]) }),
+    row({ bucket: newest - HOUR, model: "other", calls: 2, costMicro: 5, lat: lat([3, 2]) }),
+    row({ bucket: newest - 5 * HOUR, model: "mystery-7b", calls: 1, lat: lat([11, 1]) }),
+    row({ bucket: newest - 5 * HOUR, model: "priced", calls: 2, costMicro: 50, lat: lat([1, 2]) }),
+  ];
+  const run = (r: RollupRow[]) => buildOverview({ range: "24h", nowMs: now, rows: r, pricedModels: new Set(["priced", "other"]), eventsToday: 7, eventsLimit: 1900 });
+  const expected = run(rows);
+
+  // deterministic Fisher-Yates with a tiny LCG: no Math.random in tests
+  const shuffled = (seed: number) => {
+    const a = [...rows];
+    let s = seed;
+    for (let i = a.length - 1; i > 0; i--) {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      const j = s % (i + 1);
+      [a[i], a[j]] = [a[j]!, a[i]!];
+    }
+    return a;
+  };
+
+  it("gives a deep-equal overview for the reversed rows, every rotation and 40 shuffles", () => {
+    expect(run([...rows].reverse())).toEqual(expected);
+    for (let k = 1; k < rows.length; k++) expect(run([...rows.slice(k), ...rows.slice(0, k)])).toEqual(expected);
+    for (let seed = 1; seed <= 40; seed++) expect(run(shuffled(seed))).toEqual(expected);
+  });
+  it("the derived lists are explicitly ordered: models by calls then name, 'no model' last, unpriced names sorted", () => {
+    // calls: priced 4+2+2 = 8, mystery-7b 6+1 = 7, other 2; the 3 spans without a model are the last row whatever their count
+    expect(expected.models.map((m) => m.model)).toEqual(["priced", "mystery-7b", "other", null]);
+    expect(expected.unpricedModels).toEqual(["mystery-7b"]);
+    expect(expected.series.map((p) => p.t)).toEqual([...expected.series.map((p) => p.t)].sort((a, b) => a - b)); // buckets ascend
   });
 });
 

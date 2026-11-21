@@ -118,6 +118,23 @@ describe("PriceBook", () => {
     expect(b.cost("Claude-Sonnet-5-5", 1000, 0)).toBe(2000); // lookup is case-insensitive
   });
 
+  it("hasPrice follows the exact rule cost() uses (case, then ONE date suffix), and is false for '' and unknown ids", async () => {
+    const b = book([SONNET]);
+    await b.ready();
+    expect(b.hasPrice("claude-sonnet-5-5")).toBe(true);
+    expect(b.hasPrice("Claude-Sonnet-5-5")).toBe(true);
+    expect(b.hasPrice("claude-sonnet-5-5-2026-11-01")).toBe(true);
+    expect(b.hasPrice("claude-sonnet-5-5-20261101")).toBe(true);
+    expect(b.hasPrice("claude-sonnet-5-5-2026-13-45")).toBe(false); // not a real date: no stripping
+    expect(b.hasPrice("claude-sonnet-5-5-extra")).toBe(false); // no prefix or fuzzy matching
+    expect(b.hasPrice("")).toBe(false);
+    expect(b.hasPrice("nope")).toBe(false);
+    // it agrees with cost() on every one of those ids
+    for (const id of ["claude-sonnet-5-5", "Claude-Sonnet-5-5", "claude-sonnet-5-5-2026-11-01", "claude-sonnet-5-5-2026-13-45", "nope"]) {
+      expect(b.hasPrice(id)).toBe(b.cost(id, 1, 1) !== null);
+    }
+  });
+
   it("caches within the ttl and reloads after it", async () => {
     let t = NOW;
     let loads = 0;

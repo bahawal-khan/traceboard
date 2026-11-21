@@ -121,6 +121,14 @@ export class PriceBook {
     return base === null ? undefined : this.byModel.get(base);
   }
 
+  /**
+   * Call after `ready()`. True when `cost()` can price this model id, by the SAME lookup rule ingest used (exact, then one
+   * date suffix stripped). The dashboard uses it to tell "unpriced model" from "free model", because rollups store 0 for both.
+   */
+  hasPrice(model: string): boolean {
+    return model !== "" && this.lookup(model) !== undefined;
+  }
+
   /** Call after `ready()`. Null when the model is unknown or has no token counts. */
   cost(model: string | undefined, inputTokens: number | undefined, outputTokens: number | undefined, cachedTokens?: number): number | null {
     if (!model || (inputTokens === undefined && outputTokens === undefined)) return null;

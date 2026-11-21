@@ -10,6 +10,16 @@ export const RANGE_SPEC: Record<OverviewRange, { buckets: number; bucketMs: numb
   "7d": { buckets: 7 * 24, bucketMs: HOUR_MS },
 };
 
+/**
+ * The window of a range: `buckets` whole buckets ending with the one that contains `nowMs`. The database reader fetches
+ * exactly [from, to) and `buildOverview` lays out exactly these buckets, so the two cannot disagree.
+ */
+export function overviewWindow(range: OverviewRange, nowMs: number): { from: number; to: number; buckets: number; bucketMs: number } {
+  const { buckets, bucketMs } = RANGE_SPEC[range];
+  const newest = Math.floor(nowMs / bucketMs) * bucketMs;
+  return { from: newest - (buckets - 1) * bucketMs, to: newest + bucketMs, buckets, bucketMs };
+}
+
 export interface BuildOverviewInput {
   range: OverviewRange;
   /** "Now" in epoch ms. The newest bucket is the one containing it (a partial hour). */
@@ -20,6 +30,8 @@ export interface BuildOverviewInput {
   pricedModels: ReadonlySet<string>;
   eventsToday: number;
   eventsLimit: number;
+  /** The reader hit its row cap: totals are partial (see OverviewData.truncated). Default false. */
+  truncated?: boolean;
 }
 
 const emptyLat = () => new Array<number>(LATENCY_BUCKETS).fill(0);
@@ -33,15 +45,15 @@ const emptyLat = () => new Array<number>(LATENCY_BUCKETS).fill(0);
  * never 0.
  */
 export function buildOverview(input: BuildOverviewInput): OverviewData {
-  const { buckets, bucketMs } = RANGE_SPEC[input.range];
-  const newest = Math.floor(input.nowMs / bucketMs) * bucketMs;
-  const from = newest - (buckets - 1) * bucketMs;
-  const to = newest + bucketMs;
+  const { from, to, buckets, bucketMs } = overviewWindow(input.range, input.nowMs);
 
   const points = new Map<number, BucketPoint & { lat: number[] }>();
   for (let i = 0; i < buckets; i++) {
     const t = from + i * bucketMs;
-    points.set(t, { t, calls: 0, errors: 0, inputTokens: 0, outputTokens: 0, costMicro: 0, p50: null, p95: null, lat: emptyLat() });
+    points.set(t, {
+      t, calls: 0, errors: 0, inputTokens: 0, outputTokens: 0, costMicro: 0,
+      unpricedCalls: 0, costLowerBound: false, p50: null, p95: null, lat: emptyLat(),
+    });
   }
 
   const byModel = new Map<string, { calls: number; inputTokens: number; outputTokens: number; costMicro: number }>();
@@ -55,6 +67,11 @@ export function buildOverview(input: BuildOverviewInput): OverviewData {
     p.inputTokens += r.inputTokens;
     p.outputTokens += r.outputTokens;
     p.costMicro += r.costMicro;
+    if (r.model !== "" && !input.pricedModels.has(r.model) && r.calls > 0) {
+      // Rollups hold 0 for an unpriced model, which looks exactly like a free one: flag the bucket instead.
+      p.unpricedCalls += r.calls;
+      p.costLowerBound = true;
+    }
     for (let k = 0; k < LATENCY_BUCKETS; k++) {
       p.lat[k]! += r.lat[k] ?? 0;
       totalLat[k]! += r.lat[k] ?? 0;
@@ -116,5 +133,6 @@ export function buildOverview(input: BuildOverviewInput): OverviewData {
     unpricedCalls,
     unpricedModels,
     quota: { eventsToday: input.eventsToday, eventsLimit: input.eventsLimit },
+    truncated: input.truncated ?? false,
   };
 }

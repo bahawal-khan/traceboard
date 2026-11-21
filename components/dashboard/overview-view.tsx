@@ -1,9 +1,11 @@
+import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { ChartCard } from "@/components/charts/chart-card";
 import { StatTile } from "@/components/charts/stat-tile";
 import { StatusBadge } from "@/components/charts/status-badge";
 import { TimeSeriesChart } from "@/components/charts/time-series-chart";
 import { QuotaMeter } from "@/components/dashboard/quota-meter";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -40,6 +42,7 @@ export function OverviewView({ data, basePath }: { data: OverviewData; basePath:
     input: p.inputTokens,
     output: p.outputTokens,
     cost: p.costMicro / 1_000_000,
+    costLb: p.costLowerBound ? 1 : 0, // 1 = this hour has events on an unpriced model: the cost is a lower bound
     p50: p.p50,
     p95: p.p95,
   }));
@@ -71,6 +74,17 @@ export function OverviewView({ data, basePath }: { data: OverviewData; basePath:
           ))}
         </nav>
       </div>
+
+      {data.truncated ? (
+        <Alert>
+          <TriangleAlert className="text-status-warning" aria-hidden />
+          <AlertTitle>Partial data</AlertTitle>
+          <AlertDescription>
+            This project reports an unusually large number of distinct model names, so older hours are incomplete and every total below
+            is partial. Use consistent model ids to fix this.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <section aria-label="Headline numbers" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatTile label="Events" value={empty ? null : formatInt(t.calls)} hint="All spans, every kind" />
@@ -148,7 +162,7 @@ export function OverviewView({ data, basePath }: { data: OverviewData; basePath:
           description="Per hour, priced models only"
           state={state}
           footnote={data.unpricedCalls > 0 ? `Excludes ${formatInt(data.unpricedCalls)} events on ${unpriced} (no price). Their cost is unknown, not zero.` : undefined}
-          table={<SeriesTable rows={rows} columns={[{ key: "cost", label: "Cost", fmt: formatCostUsd }]} />}
+          table={<SeriesTable rows={rows} columns={[{ key: "cost", label: "Cost", fmt: formatCostUsd, lowerBoundKey: "costLb" }]} />}
         >
           <TimeSeriesChart data={rows} series={[{ key: "cost", label: "Cost", color: "var(--chart-3)" }]} kind="bar" valueFormat="cost" ariaLabel={`Bar chart of cost per hour over the last ${RANGE_LABEL[data.range]}`} />
         </ChartCard>
@@ -235,7 +249,8 @@ function SeriesTable({
   columns,
 }: {
   rows: Array<{ t: number } & Record<string, number | null>>;
-  columns: Array<{ key: string; label: string; fmt: (v: number) => string }>;
+  /** `lowerBoundKey`: a row field that is 1 when the value is only a lower bound; the cell then reads "≥ value". */
+  columns: Array<{ key: string; label: string; fmt: (v: number) => string; lowerBoundKey?: string }>;
 }) {
   return (
     <table className="w-full text-left text-xs">
@@ -254,8 +269,12 @@ function SeriesTable({
           <tr key={r.t}>
             <td className="py-0.5 pr-3 whitespace-nowrap">{formatUtc(r.t)}</td>
             {columns.map((c) => (
-              <td key={c.key} className="py-0.5 pr-3 text-right tabular-nums">
-                {r[c.key] === null ? UNKNOWN : c.fmt(r[c.key] as number)}
+              <td
+                key={c.key}
+                className="py-0.5 pr-3 text-right tabular-nums"
+                title={c.lowerBoundKey && r[c.lowerBoundKey] === 1 ? "Lower bound: some events this hour have no price" : undefined}
+              >
+                {r[c.key] === null ? UNKNOWN : `${c.lowerBoundKey && r[c.lowerBoundKey] === 1 ? "≥ " : ""}${c.fmt(r[c.key] as number)}`}
               </td>
             ))}
           </tr>

@@ -43,6 +43,10 @@ export interface BucketPoint {
   inputTokens: number;
   outputTokens: number;
   costMicro: number;
+  /** Events in this bucket on named models WITHOUT a price. Their cost is unknown and is not in `costMicro`. */
+  unpricedCalls: number;
+  /** True when `unpricedCalls > 0`: `costMicro` is a lower bound for this bucket, not the whole cost. */
+  costLowerBound: boolean;
   /** Approximate (from the latency histogram); null when the bucket has no latency data. */
   p50: number | null;
   p95: number | null;
@@ -81,6 +85,11 @@ export interface OverviewData {
   unpricedCalls: number;
   unpricedModels: string[];
   quota: { eventsToday: number; eventsLimit: number };
+  /**
+   * True when the reader hit its row cap (an absurd number of distinct model names): the NEWEST buckets are complete,
+   * older ones may be missing, so every total is partial and the UI must say so.
+   */
+  truncated: boolean;
 }
 
 // ---- traces (used from P3.5; part of the snapshot now so the demo contains an orphan, a loop and an unpriced call) ----
