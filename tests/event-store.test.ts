@@ -86,6 +86,24 @@ describe("PgEventStore (statement shape; no database)", () => {
     expect(names.indexOf("c")).toBeLessThan(names.indexOf("u"));
   });
 
+  it("maps the two content counters from the statement result separately (stored and dropped by the daily cap)", async () => {
+    mocks.transaction.mockImplementation(async (build: (t: (s: TemplateStringsArray, ...v: unknown[]) => Stmt) => Stmt[]) => {
+      build((s, ...values) => ({ text: s.join("?"), values }));
+      return [[], [{ ...RESULT, content_stored: 4, content_dropped: 7 }]];
+    });
+    const r = await new PgEventStore().persist(ctx(), [ev()]);
+    expect(r).toMatchObject({ contentStored: 4, contentDropped: 7 });
+  });
+
+  it("counts STORED content rows (c), not wanted ones (cw), for both content_stored and the usage_daily counter; dropped = wanted - stored", async () => {
+    await new PgEventStore().persist(ctx(), [ev()]);
+    const text = seen[1]!.text;
+    expect(text).toMatch(/\(select count\(\*\) from c\)::int as content_stored/);
+    expect(text).toMatch(/\(select count\(\*\) from c\)\s+on conflict \(project_id, day\)/);
+    expect(text).not.toMatch(/count\(\*\) from cw\)::int as content_stored/);
+    expect(text).toMatch(/\(\(select count\(\*\) from cw\) - \(select count\(\*\) from c\)\)::int as content_dropped/);
+  });
+
   it("takes project_id from the context, never from the rows", async () => {
     // Even a row smuggling a foreign project id in any field cannot change the project parameter.
     const sneaky = { ...ev(), projectId: OTHER, project_id: OTHER } as unknown as NormalizedEvent;
