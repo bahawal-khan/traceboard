@@ -105,7 +105,12 @@ jobs:
   # because the newest majors require 3.10+; one extra entry runs those older releases on a current Python too.
   sdk-python:
     name: sdk-python (py${{ matrix.python }}, ${{ matrix.pins }} pins)
-    runs-on: ubuntu-latest
+    # PINNED on purpose, only for this job: `ubuntu-latest` has moved to Ubuntu 26.04, which has no Python 3.9 build in
+    # actions/python-versions (3.9 is end-of-life; 3.9 exists for 22.04 and 24.04 only, 3.10 to 3.15 exist for all three).
+    # 3.9 is our supported minimum (pyproject requires-python). Remove this pin when 3.9 is dropped. ubuntu-24.04 stays
+    # available until GitHub deprecates it, which starts when the NEXT Ubuntu image (28.04) goes GA (runner-images policy:
+    # at most 2 GA images).
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
