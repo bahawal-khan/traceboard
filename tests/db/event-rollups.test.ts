@@ -12,6 +12,7 @@ import { createApiKey } from "@/lib/repo/api-keys";
 import { ctxFromApiKey, ctxFromSession } from "@/lib/repo/ctx";
 import { createProject } from "@/lib/repo/projects";
 import { ensureEventPartitions } from "./helpers/job-role";
+import { cleanupOwners } from "./helpers/cleanup";
 
 /**
  * Write-time rollups, usage and budgets, all computed from the rows the insert actually produced.
@@ -73,7 +74,7 @@ run("event rollups (database)", () => {
     await ensureEventPartitions();
   });
   afterAll(async () => {
-    for (const u of users) await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);
+    await cleanupOwners(sql, users); // one round trip for all users (tests/db/helpers/cleanup.ts)
   });
 
   it("writes minute and hourly rollups, usage and budget rows for a batch", async () => {

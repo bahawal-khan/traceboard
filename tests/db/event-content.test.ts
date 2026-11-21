@@ -14,6 +14,7 @@ import { createApiKey } from "@/lib/repo/api-keys";
 import { ctxFromApiKey, ctxFromSession } from "@/lib/repo/ctx";
 import { createProject } from "@/lib/repo/projects";
 import { ensureEventPartitions } from "./helpers/job-role";
+import { cleanupOwners } from "./helpers/cleanup";
 
 /** Opt-in, encrypted, expiring content capture. Real database as app_rw. Skipped without DATABASE_URL. */
 const url = process.env.DATABASE_URL;
@@ -60,7 +61,7 @@ run("event content (database)", () => {
     await ensureEventPartitions();
   });
   afterAll(async () => {
-    for (const u of users) await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);
+    await cleanupOwners(sql, users); // one round trip for all users (tests/db/helpers/cleanup.ts)
   });
 
   it("is OFF by default: no content row is stored, but the event is", async () => {

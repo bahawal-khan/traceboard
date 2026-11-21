@@ -17,7 +17,13 @@
     "db:seed": "node scripts/seed-prices.mjs",
     "measure:rows": "node scripts/measure-event-size.mjs",
     "test:unit": "vitest run --project unit",
-    "test:db": "vitest run --project db"
+    "test:db": "vitest run --project db",
+    "test:db:timed": "node scripts/test-db.mjs all --timing",
+    "test:db:ingest": "node scripts/test-db.mjs ingest",
+    "test:db:security": "node scripts/test-db.mjs security",
+    "test:db:control": "node scripts/test-db.mjs control",
+    "test:db:jobs": "node scripts/test-db.mjs jobs",
+    "db:ping": "node scripts/db-ping.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

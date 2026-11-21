@@ -55,3 +55,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# ---------- local test measurements ----------
+/test-results/
