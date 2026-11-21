@@ -21,6 +21,7 @@ import { createProject } from "@/lib/repo/projects";
 import { loadModelPrices } from "@/lib/repo/prices";
 import { readUsageToday } from "@/lib/repo/usage";
 import { ensureEventPartitions, jobSql } from "./helpers/job-role";
+import { cleanupOwners } from "./helpers/cleanup";
 
 /** POST /api/ingest end to end against the real database as app_rw. Skipped without DATABASE_URL. */
 const url = process.env.DATABASE_URL;
@@ -83,7 +84,7 @@ run("ingest route (database)", () => {
     await ensureEventPartitions();
   });
   afterAll(async () => {
-    for (const u of users) await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);
+    await cleanupOwners(sql, users); // one round trip for all users (tests/db/helpers/cleanup.ts)
   });
 
   it("accepts a batch: 202, rows, server-side cost, rollups, usage, and last_used_at after the response", async () => {

@@ -12,6 +12,7 @@ import { ctxFromApiKey, ctxFromSession } from "@/lib/repo/ctx";
 import { createProject } from "@/lib/repo/projects";
 import { withTenant } from "@/lib/repo/tenant";
 import { TokenBucketLimiter } from "@/lib/ratelimit";
+import { cleanupOwners } from "./helpers/cleanup";
 
 /** API-key auth, last_used_at and revocation against the real database as app_rw. Skipped without DATABASE_URL. */
 const url = process.env.DATABASE_URL;
@@ -49,7 +50,7 @@ run("api key auth (database)", () => {
     resetTouchThrottleForTests();
   });
   afterAll(async () => {
-    for (const u of users) await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);
+    await cleanupOwners(sql, users); // one round trip for all users (tests/db/helpers/cleanup.ts)
   });
 
   it("touchApiKey stamps last_used_at, and only once per minute even across instances", async () => {

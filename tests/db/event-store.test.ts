@@ -13,6 +13,7 @@ import { ctxFromApiKey, ctxFromSession } from "@/lib/repo/ctx";
 import { createProject } from "@/lib/repo/projects";
 import { withTenant } from "@/lib/repo/tenant";
 import { ensureEventPartitions } from "./helpers/job-role";
+import { cleanupOwners } from "./helpers/cleanup";
 
 /** persistEvents (events insert + dedupe) against the real database as app_rw. Skipped without DATABASE_URL. */
 const url = process.env.DATABASE_URL;
@@ -57,7 +58,7 @@ run("PgEventStore (database)", () => {
     await ensureEventPartitions();
   });
   afterAll(async () => {
-    for (const u of users) await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);
+    await cleanupOwners(sql, users); // one round trip for all users (tests/db/helpers/cleanup.ts)
   });
 
   it("inserts a batch and stores every field with the right type", async () => {

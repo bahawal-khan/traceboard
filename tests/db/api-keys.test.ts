@@ -14,6 +14,7 @@ import { LimitReachedError, NotFoundError } from "@/lib/repo/errors";
 import { createApiKey, listApiKeys, revokeApiKey } from "@/lib/repo/api-keys";
 import { createProject } from "@/lib/repo/projects";
 import { POST as createProjectRoute } from "@/app/api/dashboard/projects/route";
+import { cleanupOwners } from "./helpers/cleanup";
 
 /** API keys against the real database as app_rw, Clerk mocked. Skipped without DATABASE_URL. */
 const url = process.env.DATABASE_URL;
@@ -59,7 +60,7 @@ run("api keys", () => {
     signIn(null);
   });
   afterAll(async () => {
-    for (const u of users) await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);
+    await cleanupOwners(sql, users); // one round trip for all users (tests/db/helpers/cleanup.ts)
   });
 
   it("creates a key that authenticates, and stores only its hash and a short prefix", async () => {

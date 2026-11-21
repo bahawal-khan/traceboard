@@ -1,0 +1,6 @@
+{
+  "ingest": ["event-store", "event-content", "event-rollups", "events", "ingest-route"],
+  "security": ["rls", "rls-coverage", "roles", "tenant", "users"],
+  "control": ["api-keys", "api-key-auth", "projects", "model-prices"],
+  "jobs": ["daily-job", "storage-guard"]
+}

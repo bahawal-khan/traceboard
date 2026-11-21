@@ -11,6 +11,7 @@ import { QUOTAS } from "@/lib/quotas";
 import { ctxFromSession } from "@/lib/repo/ctx";
 import { LimitReachedError, NotFoundError } from "@/lib/repo/errors";
 import { createProject, deleteProject, getProject, listProjects, renameProject } from "@/lib/repo/projects";
+import { cleanupOwners } from "./helpers/cleanup";
 
 /** Projects repo + routes against the real database as app_rw, with Clerk mocked. Skipped without DATABASE_URL. */
 const url = process.env.DATABASE_URL;
@@ -50,9 +51,7 @@ run("projects repo and routes", () => {
   });
 
   afterAll(async () => {
-    for (const u of users) {
-      await raw(u, [], (t) => [t`delete from projects where owner_id = ${u}`, t`select release_user_slot()`]);
-    }
+    await cleanupOwners(sql, users); // one round trip for all users (tests/db/helpers/cleanup.ts)
   });
 
   it("creates, lists, gets, renames and deletes a project, writing audit rows", async () => {
