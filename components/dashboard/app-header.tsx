@@ -1,5 +1,5 @@
-import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
+import { AccountMenu } from "@/components/clerk/account-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 /** Top bar for every signed-in page: brand, theme switch, account menu. Tap targets are 44 px on small screens. */
@@ -12,7 +12,7 @@ export function AppHeader() {
         </Link>
         <div className="flex items-center gap-1">
           <ThemeToggle />
-          <UserButton />
+          <AccountMenu />
         </div>
       </div>
     </header>

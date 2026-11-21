@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { connection } from "next/server";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ThemeScript } from "@/components/theme-script";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
@@ -22,10 +23,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // The theme script is inline, so it needs the same per-request nonce the CSP allows (set in proxy.ts).
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
-    // suppressHydrationWarning: next-themes sets the class/colour-scheme on <html> before React hydrates.
+    // suppressHydrationWarning: the inline theme script sets the `dark` class and color-scheme on <html> before React hydrates.
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        {/* Rendered here, by a Server Component, so React never client-renders a <script> (that is what warns in dev). */}
+        <ThemeScript nonce={nonce} />
+      </head>
       <body className="min-h-full flex flex-col">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange nonce={nonce}>
+        <ThemeProvider>
           <ClerkProvider dynamic>
             <TooltipProvider>{children}</TooltipProvider>
           </ClerkProvider>

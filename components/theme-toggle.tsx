@@ -1,23 +1,20 @@
 "use client";
 
 import { Monitor, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
-import { useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
+import { useTheme } from "@/components/theme-provider";
+import { THEMES, type Theme } from "@/lib/theme";
 
-const ORDER = ["system", "light", "dark"] as const;
-type Choice = (typeof ORDER)[number];
-const LABEL: Record<Choice, string> = { system: "System", light: "Light", dark: "Dark" };
+const LABEL: Record<Theme, string> = { system: "System", light: "Light", dark: "Dark" };
 
-const noopSubscribe = () => () => {};
-
-/** Cycles System -> Light -> Dark. The real choice is only known in the browser, so the server renders a neutral button. */
+/**
+ * Cycles System -> Light -> Dark. The choice lives in the browser, so the server (and the first client render) shows
+ * "System"; the real one appears right after hydration. A 44 px tap target on small screens.
+ */
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
-  const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
-  const current: Choice = mounted && (theme === "light" || theme === "dark") ? theme : "system";
-  const next = ORDER[(ORDER.indexOf(current) + 1) % ORDER.length];
-  const Icon = current === "dark" ? Moon : current === "light" ? Sun : Monitor;
+  const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]!;
+  const Icon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
 
   return (
     <Button
@@ -25,8 +22,8 @@ export function ThemeToggle() {
       size="icon"
       className="size-11 sm:size-8"
       onClick={() => setTheme(next)}
-      aria-label={`Theme: ${LABEL[current]}. Switch to ${LABEL[next]}.`}
-      title={`Theme: ${LABEL[current]}`}
+      aria-label={`Theme: ${LABEL[theme]}. Switch to ${LABEL[next]}.`}
+      title={`Theme: ${LABEL[theme]}`}
     >
       <Icon aria-hidden />
     </Button>
