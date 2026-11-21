@@ -201,46 +201,58 @@ class _Core(object):
         # other status or error code, keeps the normal cap.
         body = result.body
         quota = status == 429 and isinstance(body, dict) and body.get("error") == "quota_exceeded"
-        with self.lock:
-            self.stats["batches_failed"] += 1
-            self.stats["last_error"] = "quota_exceeded" if quota else result.error
-
+        # Decide first (no shared state is touched), then apply EVERYTHING for this failed batch in ONE critical section under
+        # `self.lock`, the lock the `stats` snapshot takes: a reader sees either none or all of batches_failed, last_error,
+        # events_failed / batches_requeued, the queue contents and the retry state of this batch, never a half-updated set.
+        # (The queue has its own lock, taken inside this one; the queue never takes `self.lock`, so the order is fixed and safe.)
+        outcome = "retry"
+        drop_count = 0
+        new_cap: Optional[int] = None
         if status == 413 and len(batch) > 1:
             # Too large for the server: halve and retry at once (this should not happen with byte-based splitting).
-            self.batch_cap = max(1, len(batch) // 2)
-            self.queue.requeue_front(batch)
-            self.count("batches_requeued")
-            return "split"
-        if permanent:
+            outcome = "split"
+            new_cap = max(1, len(batch) // 2)
+        elif permanent:
             # Resending the same bytes cannot help: drop and count. Rejected credentials also pause sending for a while.
-            self.count("events_failed", len(batch))
-            if status in _AUTH_STATUSES:
-                with self.lock:
-                    self.retry_at = time.monotonic() + self.cfg.retry_max_s
-                logger.warning("llm_monitor: the server refused the API key (HTTP %s); events are dropped until it is fixed", status)
-            return "dropped"
-
-        if status is not None and status >= 500 and status not in _UNAVAILABLE:
+            outcome = "dropped"
+            drop_count = len(batch)
+        elif status is not None and status >= 500 and status not in _UNAVAILABLE:
             # The server failed on THIS payload (a plain 500 is not "unavailable"): isolate a poison event by halving the
             # batch on every failure, and give up on a single event after a few attempts so it cannot block the queue.
             if len(batch) > 1:
-                self.batch_cap = max(1, len(batch) // 2)
+                new_cap = max(1, len(batch) // 2)
             else:
                 batch[0].attempts += 1
                 if batch[0].attempts >= _MAX_POISON_ATTEMPTS:
-                    self.count("events_failed")
-                    return "dropped"
+                    outcome = "dropped"
+                    drop_count = 1
+        auth = outcome == "dropped" and permanent and status in _AUTH_STATUSES
 
-        dropped = self.queue.requeue_front(batch)
+        queue_dropped = 0
         with self.lock:
-            self.stats["batches_requeued"] += 1
-            self.consecutive_failures += 1
-            self.retry_at = time.monotonic() + self.backoff_delay(
-                self.consecutive_failures, result.retry_after_s, self.cfg.max_quota_retry_after_s if quota else None
-            )
-        if dropped:
-            logger.debug("llm_monitor: queue full while retrying, %d oldest events dropped", dropped)
-        return "retry"
+            self.stats["batches_failed"] += 1
+            self.stats["last_error"] = "quota_exceeded" if quota else result.error
+            if new_cap is not None:
+                self.batch_cap = new_cap
+            if outcome == "split":
+                self.queue.requeue_front(batch)
+                self.stats["batches_requeued"] += 1
+            elif outcome == "dropped":
+                self.stats["events_failed"] += drop_count
+                if auth:
+                    self.retry_at = time.monotonic() + self.cfg.retry_max_s
+            else:
+                queue_dropped = self.queue.requeue_front(batch)
+                self.stats["batches_requeued"] += 1
+                self.consecutive_failures += 1
+                self.retry_at = time.monotonic() + self.backoff_delay(
+                    self.consecutive_failures, result.retry_after_s, self.cfg.max_quota_retry_after_s if quota else None
+                )
+        if auth:
+            logger.warning("llm_monitor: the server refused the API key (HTTP %s); events are dropped until it is fixed", status)
+        if queue_dropped:
+            logger.debug("llm_monitor: queue full while retrying, %d oldest events dropped", queue_dropped)
+        return outcome
 
     def shutdown(self, timeout: float) -> None:
         deadline = time.monotonic() + max(0.0, timeout)
@@ -395,13 +407,13 @@ class Monitor(object):
             if self._holder is None:
                 return dict(self._local_stats, queue_size=0, enabled=False)
             core = self._holder.get()
-            with core.lock:
+            with core.lock:  # ONE critical section: the counters, the retry state and the queue are read at the same instant
                 snap = dict(core.stats)
-            snap["consecutive_failures"] = core.consecutive_failures
-            snap["interval_ms"] = core.interval_ms
-            snap["batch_cap"] = core.batch_cap
-            snap["queue_size"] = len(core.queue)
-            snap["events_dropped_queue_full"] = core.queue.dropped
+                snap["consecutive_failures"] = core.consecutive_failures
+                snap["interval_ms"] = core.interval_ms
+                snap["batch_cap"] = core.batch_cap
+                snap["queue_size"] = len(core.queue)
+                snap["events_dropped_queue_full"] = core.queue.dropped
             snap["enabled"] = True
             return snap
         except Exception:

@@ -322,7 +322,8 @@ class TestOutage(unittest.TestCase):
         mon = Monitor(API_KEY, "http://127.0.0.1:%d" % port, flush_interval_ms=100, min_flush_interval_ms=20, retry_base_s=0.05, retry_max_s=0.2, timeout_s=1.0)
         for i in range(30):
             mon.track(name="e%02d" % i)
-        self.assertTrue(wait_until(lambda: mon.stats["batches_failed"] >= 2, 5))
+        # Wait for the final state (two failures AND the whole batch back in the queue): a batch being retried is briefly out of it.
+        self.assertTrue(wait_until(lambda: (lambda s: s["batches_failed"] >= 2 and s["queue_size"] == 30)(mon.stats), 5))
         self.assertEqual(mon.stats["queue_size"], 30)
         with IngestServer(port=port) as server:
             self.assertTrue(wait_until(lambda: mon.stats["events_sent"] == 30, 10))

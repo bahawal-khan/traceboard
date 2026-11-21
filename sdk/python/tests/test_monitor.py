@@ -219,6 +219,93 @@ class TestFailuresNeverReachTheHostApp(unittest.TestCase):
         self.assertEqual(mon.stats["events_sent"], 2)
         mon.shutdown()
 
+    def test_a_failed_batch_is_one_atomic_update_for_a_concurrent_reader(self):
+        # Deterministic: the writer stops right after it bumps batches_failed (the first write of a failed batch) until a reader
+        # that started AFTER that point has finished, or 0.3 s have passed. With one critical section the reader cannot get in
+        # (it needs the lock the writer holds), so the writer times out and the reader sees the final state. With separate
+        # updates the reader gets in at once and sees batches_failed=1 with events_failed=0.
+        fake = FakeTransport(ok=False, status=400)
+        mon = make(fake, batch_size=1000)
+        core = mon._holder.get()
+        mid, reader_started, reader_done = threading.Event(), threading.Event(), threading.Event()
+
+        class Hooked(dict):
+            def __setitem__(self, key, value):
+                dict.__setitem__(self, key, value)
+                if key == "batches_failed" and not mid.is_set():
+                    mid.set()
+                    reader_started.wait(5)
+                    reader_done.wait(0.3)
+
+        core.stats = Hooked(core.stats)
+        seen = {}
+
+        def reader():
+            mid.wait(5)
+            reader_started.set()
+            seen["s"] = mon.stats
+            reader_done.set()
+
+        t = threading.Thread(target=reader)
+        t.start()
+        mon.track(name="a")
+        mon.track(name="b")
+        self.assertTrue(mon.flush(2))
+        t.join(5)
+        s = seen["s"]
+        self.assertEqual((s["batches_failed"], s["events_failed"], s["last_error"]), (1, 2, "http_400"))
+        mon.shutdown(0)
+
+    def test_stats_are_never_half_updated_while_failing_flushes_run(self):
+        # Stress: a reader hammers `stats` while the flush thread fails batch after batch. One event per batch makes the invariant
+        # exact at EVERY instant: events_failed == batches_failed, and last_error is set as soon as a batch has failed.
+        fake = FakeTransport(ok=False, status=400)
+        mon = make(fake, batch_size=1)
+        stop, bad = threading.Event(), []
+
+        def reader():
+            while not stop.is_set():
+                s = mon.stats
+                if s["events_failed"] != s["batches_failed"] or (s["batches_failed"] and s["last_error"] != "http_400"):
+                    bad.append(s)
+                    return
+
+        t = threading.Thread(target=reader)
+        t.start()
+        for i in range(300):
+            mon.track(name="e%d" % i)
+        self.assertTrue(wait_until(lambda: mon.stats["batches_failed"] == 300, 20))
+        stop.set()
+        t.join(5)
+        mon.shutdown(0)
+        self.assertEqual(bad, [])
+        self.assertEqual(mon.stats["events_failed"], 300)
+
+    def test_a_requeued_batch_is_visible_in_the_counters_and_the_queue_together(self):
+        # 503 keeps the events: whenever a batch is counted as failed it is also counted as requeued AND is back in the queue.
+        fake = FakeTransport(ok=False, status=503)
+        mon = make(fake, batch_size=2, retry_base_s=0.001, retry_max_s=0.002)
+        stop, bad = threading.Event(), []
+
+        def reader():
+            while not stop.is_set():
+                s = mon.stats
+                # the batch being sent is out of the queue only between the take and the failure update: batches_failed counts
+                # finished attempts, so after any finished attempt all 6 events are queued, in flight, or counted.
+                if s["batches_requeued"] != s["batches_failed"] or s["queue_size"] not in (4, 6):
+                    bad.append(s)
+                    return
+
+        for i in range(6):
+            mon.track(name="e%d" % i)
+        t = threading.Thread(target=reader)
+        t.start()
+        self.assertTrue(wait_until(lambda: mon.stats["batches_failed"] >= 300, 20))
+        stop.set()
+        t.join(5)
+        mon.shutdown(0)
+        self.assertEqual(bad, [])
+
     def test_a_transient_failure_keeps_the_events_and_delivers_them_after_a_backoff(self):
         fake = FakeTransport(ok=False, status=503)
         mon = make(fake, batch_size=2, retry_base_s=0.05, retry_max_s=0.1)
