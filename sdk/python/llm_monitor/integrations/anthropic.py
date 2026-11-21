@@ -16,7 +16,8 @@ delta, or the start of a tool_use block). For the `messages.stream()` helper, to
 final snapshot when the `with` block ends, and time to first token is recorded only when you iterate the stream object itself
 (not `text_stream`). A stream you abandon is reported once with the tag `incomplete`.
 
-Not instrumented (yet): `with_raw_response`, `client.beta.*`, `messages.batches`, and clients made by `with_options(...)`. Content
+Not instrumented (yet): `with_raw_response` / `with_streaming_response` (those calls pass through untouched and are not recorded),
+`client.beta.*`, `messages.batches`, and clients made by `with_options(...)`. Content
 is captured only when the monitor was configured with capture_content=True. Nothing here raises into the host application.
 """
 from __future__ import annotations

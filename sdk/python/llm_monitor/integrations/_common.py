@@ -254,9 +254,27 @@ class AsyncStream(object):
         return getattr(self._inner, name)
 
 
+_RAW_MARKER = "x-stainless-raw-response"
+
+
+def is_raw_call(kwargs: Dict[str, Any]) -> bool:
+    """True for calls made through `client.<resource>.with_raw_response` / `with_streaming_response`. The real openai and
+    anthropic packages build those on top of the (patched) `create` and mark them with the header X-Stainless-Raw-Response
+    (values "true", "raw" or "stream", verified on openai 2.48/3.57 and anthropic 0.125/2.12). They are not instrumented: the
+    result is a raw response or a not-yet-sent context manager, so there are no tokens to read and a latency measured at the wrong
+    moment, and recording them would add events with empty usage."""
+    try:
+        headers = kwargs.get("extra_headers")
+        return isinstance(headers, dict) and any(isinstance(k, str) and k.lower() == _RAW_MARKER for k in headers)
+    except Exception:
+        return False
+
+
 def begin(monitor_arg: Any, kwargs: Dict[str, Any], provider: str, factory: Callable[..., Call], prepare: Callable[[Dict[str, Any]], bool]) -> Any:
     """Returns (call, hide_usage) or None when the call should pass through untouched."""
     try:
+        if is_raw_call(kwargs):
+            return None
         monitor = monitor_arg or get_default_monitor()
         if monitor is None or not monitor.enabled:
             return None

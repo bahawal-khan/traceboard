@@ -1,0 +1,4 @@
+# DEV/CI ONLY. The older provider majors (the newest releases that still admit Python 3.9), run on a newer interpreter too so
+# both generations of each package are covered. Selected with LLM_MONITOR_PIN_SET=legacy. See requirements-providers.txt.
+openai==2.48.0
+anthropic==0.125.0

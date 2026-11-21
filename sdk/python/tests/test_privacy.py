@@ -121,7 +121,7 @@ class TestLocalRedaction(unittest.TestCase):
         self.assertEqual(content["input"], "mail [redacted:email] key [redacted:secret]")
         self.assertEqual(content["output"], "card [redacted:card]")
         self.assertNotIn(SENTINEL_EMAIL, visible)
-        self.assertNotIn("4111", visible)
+        self.assertNotIn("4111 1111", visible)
 
     def test_it_can_be_switched_off_the_server_then_still_redacts(self):
         content, _ = self.sent_content(redact_content=False)

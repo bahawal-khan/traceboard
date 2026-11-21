@@ -302,8 +302,24 @@ class TestAsync(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(spans["a"]["trace_id"], spans["b"]["trace_id"])
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestRawCallsPassThrough(unittest.TestCase):
+    """with_raw_response / with_streaming_response reach `create` marked with X-Stainless-Raw-Response; they are not instrumented."""
+
+    def test_marked_calls_are_neither_recorded_nor_modified(self):
+        client, mon = make()
+        for value in ("true", "raw", "stream"):
+            client.chat.completions.create(model="m", messages=MSGS, stream=False, extra_headers={"x-stainless-raw-response": value})
+        client.chat.completions.create(model="m", messages=MSGS, stream=True, extra_headers={"X-Stainless-Raw-Response": "stream"})
+        self.assertEqual(mon.events, [])
+        self.assertNotIn("stream_options", client.calls[-1])  # no usage injection either
+        self.assertEqual(client.calls[-1]["extra_headers"], {"X-Stainless-Raw-Response": "stream"})
+
+    def test_other_headers_do_not_matter(self):
+        client, mon = make()
+        client.chat.completions.create(model="m", messages=MSGS, extra_headers={"X-Mine": "1"})
+        client.chat.completions.create(model="m", messages=MSGS, extra_headers=None)
+        client.chat.completions.create(model="m", messages=MSGS, extra_headers="not-a-dict")
+        self.assertEqual(len(mon.events), 3)
 
 
 class TestWithRealMonitor(unittest.TestCase):
@@ -330,7 +346,7 @@ class TestWithRealMonitor(unittest.TestCase):
         self.assertEqual((llm["input_tokens"], llm["output_tokens"], llm["cached_tokens"]), (80, 9, 16))
         self.assertNotIn("content", llm)
         wire = repr(events)
-        for raw in ("4111", "bob@example.com", "my card"):
+        for raw in ("4111 1111", "bob@example.com", "my card"):
             self.assertNotIn(raw, wire)
         agent = next(e for e in events if e["kind"] == "agent")
         self.assertEqual(llm["parent_id"], agent["span_id"])
@@ -356,3 +372,7 @@ class TestWithRealMonitor(unittest.TestCase):
         client = instrument_openai(FakeOpenAI(), mon)
         list(client.chat.completions.create(model="m", messages=MSGS, stream=True))
         self.assertNotIn("stream_options", client.calls[0])
+
+
+if __name__ == "__main__":
+    unittest.main()

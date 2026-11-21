@@ -379,6 +379,16 @@ class TestAsync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mon.events[0]["status"], "error")
 
 
+class TestRawCallsPassThrough(unittest.TestCase):
+    def test_marked_calls_are_not_recorded_and_arguments_are_untouched(self):
+        client, mon = make()
+        client.messages.create(model="m", max_tokens=5, messages=MSGS, extra_headers={"X-Stainless-Raw-Response": "raw"})
+        self.assertEqual(mon.events, [])
+        self.assertEqual(client.calls[-1]["extra_headers"], {"X-Stainless-Raw-Response": "raw"})
+        client.messages.create(model="m", max_tokens=5, messages=MSGS, extra_headers={"X-Mine": "1"})
+        self.assertEqual(len(mon.events), 1)
+
+
 class TestWithRealMonitor(unittest.TestCase):
     def test_what_is_sent_is_hashed_and_totalled(self):
         from _helpers import API_KEY, FakeTransport
