@@ -23,7 +23,12 @@ const DESTRUCTIVE = [
   "purge_orphaned_content(integer)",
   "purge_rollups(integer)",
   "storage_report()",
+  "apply_storage_guard()",
+  "apply_storage_level(text)",
+  "storage_level_for(text, numeric)",
 ];
+/** Pure helpers: no table access, so not SECURITY DEFINER (they still have a pinned search_path and no PUBLIC grant). */
+const PURE_HELPERS = ["event_partition_is_droppable", "storage_level_for"];
 const TENANT_TABLES = ["events", "event_content", "metrics_minute", "metrics_hourly", "usage_daily", "budget_usage"] as const;
 
 run("daily job functions (database)", () => {
@@ -317,13 +322,19 @@ run("daily job functions (database)", () => {
         const [p] = await sql`
           select has_function_privilege('app_rw', ${"public." + sig}, 'EXECUTE') as rw,
                  has_function_privilege('app_job', ${"public." + sig}, 'EXECUTE') as job,
-                 coalesce(proacl::text, '') as acl, prosecdef, coalesce(proconfig::text, '') as config, pg_get_userbyid(proowner) as owner
+                 coalesce(proacl::text, '') as acl, prosecdef, provolatile as volatile, coalesce(proconfig::text, '') as config, pg_get_userbyid(proowner) as owner
             from pg_proc where oid = ${"public." + sig}::regprocedure`;
         expect([sig, p!.rw, p!.job], sig).toEqual([sig, false, true]);
         expect(p!.acl, `${sig} must not be granted to PUBLIC`).not.toMatch(/(^\{|,)=X\//);
         expect(p!.owner).toBe("migrator");
         expect(p!.config, `${sig}: search_path must be pinned`).toContain("search_path=pg_catalog, public");
-        if (!sig.startsWith("event_partition_is_droppable")) expect(p!.prosecdef, `${sig} must be SECURITY DEFINER`).toBe(true);
+        // Pure helpers read no table, so they run with the caller's rights (SECURITY INVOKER) and must be IMMUTABLE; every function that touches data is SECURITY DEFINER.
+        if (PURE_HELPERS.some((h) => sig.startsWith(h))) {
+          expect(p!.prosecdef, `${sig} is a pure helper: no SECURITY DEFINER`).toBe(false);
+          expect(p!.volatile, `${sig} must be IMMUTABLE`).toBe("i");
+        } else {
+          expect(p!.prosecdef, `${sig} must be SECURITY DEFINER`).toBe(true);
+        }
       }
     });
 
@@ -338,6 +349,9 @@ run("daily job functions (database)", () => {
       await expect(sql`select job_ensure_partitions()`).rejects.toThrow(/permission denied/i);
       await expect(sql`select * from events_partition_health()`).rejects.toThrow(/permission denied/i);
       await expect(sql`select * from storage_report()`).rejects.toThrow(/permission denied/i);
+      await expect(sql`select * from apply_storage_guard()`).rejects.toThrow(/permission denied/i);
+      await expect(sql`select * from apply_storage_level('critical')`).rejects.toThrow(/permission denied/i);
+      await expect(sql`select storage_level_for('ok', 0.9)`).rejects.toThrow(/permission denied/i);
     });
 
     it("content_slots_left is the one tenant-path helper: app_rw yes (invoker rights), app_job no, PUBLIC no", async () => {
@@ -350,7 +364,7 @@ run("daily job functions (database)", () => {
       expect(p!.acl).not.toMatch(/(^\{|,)=X\//);
     });
 
-    it("app_job is a plain role that owns nothing and has no table privileges except on app_state", async () => {
+    it("app_job is a plain role that owns nothing and has NO table privileges at all (since 0012 it reaches app_state only through functions)", async () => {
       const [r] = await sql`select rolsuper, rolbypassrls, rolcreatedb, rolcreaterole, rolreplication, rolcanlogin from pg_roles where rolname = 'app_job'`;
       expect(r).toEqual({ rolsuper: false, rolbypassrls: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolcanlogin: true });
       const [owned] = await sql`select count(*)::int as n from pg_class where relowner = 'app_job'::regrole`;
@@ -361,8 +375,7 @@ run("daily job functions (database)", () => {
          where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p') and not c.relispartition`;
       expect(new Set(grid.map((g) => g.name)).size).toBeGreaterThanOrEqual(15);
       for (const g of grid) {
-        const allowed = g.name === "app_state" && ["SELECT", "INSERT", "UPDATE"].includes(g.priv);
-        expect(g.ok, `app_job ${g.priv} on ${g.name}`).toBe(allowed);
+        expect(g.ok, `app_job ${g.priv} on ${g.name}`).toBe(false);
       }
       await expect(job`create table nope (id int)`).rejects.toThrow(/permission denied/i);
       await expect(job`select 1 from app_users limit 1`).rejects.toThrow(/permission denied/i);

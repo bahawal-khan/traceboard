@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { createLogger } from "@/lib/logger";
-import { DAILY_JOB, runDailyJob, storageLevel, type JobStore } from "@/lib/jobs/daily";
+import { DAILY_JOB, runDailyJob, type JobStore, type StorageGuardResult } from "@/lib/jobs/daily";
 import { isCronAuthorized } from "@/lib/jobs/cron-auth";
 import { createDailyJobHandler } from "@/lib/jobs/handler";
 
 const SECRET = "s3cret-cron-value-0123456789";
 const h = (authorization?: string) => new Headers(authorization ? { authorization } : {});
 const health = { currentPartition: "events_y2026m11", currentExists: true, nextPartition: "events_y2026m12", nextExists: true, partitionCount: 3 };
+const guardOk: StorageGuardResult = { level: "ok", previousLevel: "ok", ratio: 0.5, conserve: false, signupsPaused: false };
 const report = { databaseBytes: 1, eventsBytes: 3e8, contentBytes: 1, rollupBytes: 1, eventsBudgetBytes: 6e8, eventsRatio: 0.5 };
 
 /** A store whose purges drain `n` rows per table in `batch`-sized calls. */
@@ -31,6 +32,7 @@ function fakeStore(over: Partial<JobStore> = {}, pending = { events: 0, content:
     },
     dropOldPartitions: async () => (calls.push("drop"), 0),
     storageReport: async () => (calls.push("storage"), report),
+    applyStorageGuard: async () => (calls.push("guard"), guardOk),
     ...over,
   };
   return store;
@@ -63,8 +65,8 @@ describe("runDailyJob", () => {
     const r = await runDailyJob(s);
     expect(r.ok).toBe(true);
     expect(r.complete).toBe(true);
-    expect(s.calls).toEqual(["ensure", "health", "events", "content", "orphans", "rollups", "drop", "storage"]);
-    expect(r.storage.level).toBe("ok");
+    expect(s.calls).toEqual(["ensure", "health", "events", "content", "orphans", "rollups", "drop", "storage", "guard"]);
+    expect(r.guard).toEqual({ status: "ok", result: guardOk, changed: false });
   });
 
   it("loops in batches until a short batch, and totals the deleted rows", async () => {
@@ -93,7 +95,7 @@ describe("runDailyJob", () => {
     expect(r.purge.events.drained).toBe(false);
     expect(r.ok).toBe(true);
     expect(r.complete).toBe(false);
-    expect(s.calls.filter((c) => c === "drop" || c === "storage")).toEqual(["drop", "storage"]); // later steps still run
+    expect(s.calls.filter((c) => c === "drop" || c === "storage" || c === "guard")).toEqual(["drop", "storage", "guard"]); // later steps still run
   });
 
   it("caps the calls per loop even if the batch never comes back short", async () => {
@@ -171,14 +173,33 @@ describe("runDailyJob", () => {
     expect(lines.join("\n")).not.toMatch(new RegExp(SECRET));
   });
 
-  it("flags storage thresholds (70% warn, 85% critical)", async () => {
-    expect(storageLevel(0.69)).toBe("ok");
-    expect(storageLevel(0.7)).toBe("warn");
-    expect(storageLevel(0.85)).toBe("critical");
+  it("reports the guard result and logs a warning when the level is over a threshold or changes", async () => {
     const warn = vi.fn();
-    const r = await runDailyJob(fakeStore({ storageReport: async () => ({ ...report, eventsRatio: 0.9 }) }), { log: { info() {}, warn, error() {} } });
-    expect(r.storage.level).toBe("critical");
-    expect(warn).toHaveBeenCalled();
+    const critical: StorageGuardResult = { level: "critical", previousLevel: "warn", ratio: 0.9, conserve: true, signupsPaused: true };
+    const r = await runDailyJob(fakeStore({ applyStorageGuard: async () => critical }), { log: { info() {}, warn, error() {} } });
+    expect(r.ok).toBe(true);
+    expect(r.guard).toEqual({ status: "ok", result: critical, changed: true });
+    expect(warn).toHaveBeenCalledTimes(2); // "over threshold" and "level changed"
+    const quiet = vi.fn();
+    await runDailyJob(fakeStore(), { log: { info() {}, warn: quiet, error() {} } });
+    expect(quiet).not.toHaveBeenCalled();
+  });
+
+  it("a failing guard fails the run (so the cron shows red) but the storage report and everything else still ran", async () => {
+    const s = fakeStore({ applyStorageGuard: async () => { throw new Error("permission denied for function apply_storage_guard"); } });
+    const r = await runDailyJob(s);
+    expect(r.ok).toBe(false);
+    expect(r.guard).toEqual({ status: "error", error: "step_failed" });
+    expect(r.storage.status).toBe("ok");
+    expect(JSON.stringify(r)).not.toMatch(/permission|apply_storage/);
+  });
+
+  it("a failing storage report does not stop the guard", async () => {
+    const s = fakeStore({ storageReport: async () => { throw new Error("x"); } });
+    const r = await runDailyJob(s);
+    expect(r.storage.status).toBe("error");
+    expect(r.guard.status).toBe("ok");
+    expect(s.calls).toContain("guard");
   });
 });
 
@@ -238,12 +259,12 @@ describe("createDailyJobHandler", () => {
 });
 
 describe("lib/repo/jobs.ts (static)", () => {
-  it("calls only the eight job functions, with bound parameters and no string-built SQL", async () => {
+  it("calls only the nine job functions, with bound parameters and no string-built SQL", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("lib/repo/jobs.ts", "utf8");
     const called = [...src.matchAll(/(?:from|select)\s+(?:[a-z_, ]+\s+from\s+)?([a-z_]+)\(/g)].map((m) => m[1]!);
     expect([...new Set(called)].sort()).toEqual(
-      ["drop_old_event_partitions", "events_partition_health", "job_ensure_partitions", "purge_expired_content", "purge_expired_events", "purge_orphaned_content", "purge_rollups", "storage_report"].sort(),
+      ["apply_storage_guard", "drop_old_event_partitions", "events_partition_health", "job_ensure_partitions", "purge_expired_content", "purge_expired_events", "purge_orphaned_content", "purge_rollups", "storage_report"].sort(),
     );
     expect(src).not.toMatch(/sql\(\)\s*\(|sql\.unsafe|\+\s*["'`]|getSql\b|lib\/db\/client|withTenant/);
     expect(src).toMatch(/getJobSql/);

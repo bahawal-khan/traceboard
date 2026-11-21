@@ -17,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
   if (status === "signed_out") redirect("/sign-in");
 
-  if (status === "full") {
+  if (status === "full" || status === "paused") {
     return (
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b px-4 py-3">
@@ -27,8 +27,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <main className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">We are at capacity</h1>
           <p className="max-w-md text-muted-foreground">
-            This free deployment has reached its user limit, so new accounts cannot be activated right now. Existing
-            accounts are not affected.
+            {status === "paused"
+              ? "This free deployment is protecting its storage, so new accounts cannot be activated right now. Existing accounts are not affected. Please try again later."
+              : "This free deployment has reached its user limit, so new accounts cannot be activated right now. Existing accounts are not affected."}
           </p>
           <Link className="rounded-md border px-4 py-2" href="/">
             Back to home

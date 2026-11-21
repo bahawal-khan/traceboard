@@ -1,5 +1,5 @@
 import { getJobSql } from "@/lib/db/job-client";
-import type { JobStore, PartitionHealth, RollupPurge, StorageReport } from "@/lib/jobs/daily";
+import type { JobStore, PartitionHealth, RollupPurge, StorageGuardResult, StorageReport } from "@/lib/jobs/daily";
 
 /**
  * The daily job's database access: calls the SECURITY DEFINER functions of migration 0011 as `app_job`. These functions
@@ -53,6 +53,19 @@ export function createJobStore(): JobStore {
         rollupBytes: int(r?.rollup_bytes),
         eventsBudgetBytes: int(r?.events_budget_bytes),
         eventsRatio: Number(r?.events_ratio ?? 0),
+      };
+    },
+    async applyStorageGuard(): Promise<StorageGuardResult> {
+      const [r] = await sql()`select level, previous_level, ratio::text as ratio, conserve, signups_paused from apply_storage_guard()`;
+      const level = r?.level;
+      if (level !== "ok" && level !== "warn" && level !== "critical") throw new Error("unexpected apply_storage_guard result");
+      const prev = r?.previous_level;
+      return {
+        level,
+        previousLevel: prev === "warn" || prev === "critical" ? prev : "ok",
+        ratio: Number(r?.ratio ?? 0),
+        conserve: r?.conserve === true,
+        signupsPaused: r?.signups_paused === true,
       };
     },
   };

@@ -30,14 +30,14 @@ run("app_rw role (runtime)", () => {
     await expect(sql`create table should_not_exist (id int)`).rejects.toThrow(/permission denied/i);
   });
 
-  it("has only SELECT/INSERT/UPDATE on app_state (no DELETE, no TRUNCATE)", async () => {
+  it("has only SELECT on app_state since 0012 (the storage guard writes it through app_job functions; no INSERT, UPDATE, DELETE, TRUNCATE)", async () => {
     const [p] = await sql`
       select has_table_privilege('app_rw', 'app_state', 'SELECT') as s,
              has_table_privilege('app_rw', 'app_state', 'INSERT') as i,
              has_table_privilege('app_rw', 'app_state', 'UPDATE') as u,
              has_table_privilege('app_rw', 'app_state', 'DELETE') as d,
              has_table_privilege('app_rw', 'app_state', 'TRUNCATE') as t`;
-    expect(p).toEqual({ s: true, i: true, u: true, d: false, t: false });
+    expect(p).toEqual({ s: true, i: false, u: false, d: false, t: false });
   });
 
   it("cannot read the migrator's drizzle journal or create schemas", async () => {

@@ -20,7 +20,7 @@ import { ctxFromApiKey, ctxFromSession } from "@/lib/repo/ctx";
 import { createProject } from "@/lib/repo/projects";
 import { loadModelPrices } from "@/lib/repo/prices";
 import { readUsageToday } from "@/lib/repo/usage";
-import { ensureEventPartitions } from "./helpers/job-role";
+import { ensureEventPartitions, jobSql } from "./helpers/job-role";
 
 /** POST /api/ingest end to end against the real database as app_rw. Skipped without DATABASE_URL. */
 const url = process.env.DATABASE_URL;
@@ -205,12 +205,13 @@ run("ingest route (database)", () => {
     const viewed = (await (await handlerFor()(post(a.secret, { events: [ev()] }))).json()) as { flush_hint_ms: number };
     expect(viewed.flush_hint_ms).toBe(1000);
 
+    const job = jobSql(); // app_rw cannot write app_state since 0012: the storage guard functions (app_job) are the only writer
     try {
-      await sql`insert into app_state (key, value) values ('conserve', 'true'::jsonb) on conflict (key) do update set value = 'true'::jsonb, updated_at = now()`;
+      await job`select * from apply_storage_level('warn')`; // warn turns the conserve flag on
       const conserve = (await (await handlerFor()(post(a.secret, { events: [ev()] }))).json()) as { flush_hint_ms: number };
       expect(conserve.flush_hint_ms).toBe(60_000);
     } finally {
-      await sql`update app_state set value = 'false'::jsonb, updated_at = now() where key = 'conserve'`; // app_rw cannot delete; false reads as unset
+      await job`select * from apply_storage_level('ok')`; // leaving warn turns conserve off again
     }
   });
 });

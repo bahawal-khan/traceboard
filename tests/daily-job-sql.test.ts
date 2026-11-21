@@ -130,7 +130,7 @@ describe("0011 daily job SQL: bounded, idempotent, no caller-chosen windows", ()
   });
   it("is registered in the drizzle journal after 0010", () => {
     const journal = JSON.parse(readFileSync("db/migrations/meta/_journal.json", "utf8")) as { entries: Array<{ idx: number; tag: string }> };
-    expect(journal.entries.at(-1)).toMatchObject({ idx: 11, tag: "0011_daily_job_sql" });
+    expect(journal.entries.find((e) => e.tag === "0011_daily_job_sql")).toMatchObject({ idx: 11 });
     const snap = JSON.parse(readFileSync("db/migrations/meta/0011_snapshot.json", "utf8")) as { prevId: string; tables: Record<string, { columns: Record<string, unknown> }> };
     const prev = JSON.parse(readFileSync("db/migrations/meta/0010_snapshot.json", "utf8")) as { id: string };
     expect(snap.prevId).toBe(prev.id);

@@ -140,7 +140,7 @@ run("tenant context (ctx* + withTenant)", () => {
       const ctx = await ctxDemo();
       expect(ctx).toMatchObject({ kind: "demo", ownerId: null, readOnly: true });
       await expect(
-        withTenant(ctx, (t) => [t`insert into app_state (key, value) values (${`ro-${randomUUID()}`}, '{}'::jsonb)`]),
+        withTenant(ctx, (t) => [t`insert into usage_daily (project_id, day) values (${randomUUID()}::uuid, current_date)`]), // app_rw may insert here, so only the read-only transaction refuses it
       ).rejects.toThrow(/read-only transaction/i);
     });
 
