@@ -106,7 +106,7 @@ export function TimeSeriesChart({
         tickMargin={8}
         minTickGap={32}
       />
-      <YAxis tickFormatter={formatAxis} tickLine={false} axisLine={false} width={56} tickMargin={4} />
+      <YAxis tickFormatter={formatAxis} tickLine={false} axisLine={false} width="auto" tickMargin={4} />
       <ChartTooltip
         cursor={{ stroke: "var(--muted-foreground)", strokeWidth: 1 }}
         content={

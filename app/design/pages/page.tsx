@@ -2,9 +2,14 @@ import { notFound } from "next/navigation";
 import { CapacityNotice } from "@/components/dashboard/capacity-notice";
 import { PageShell } from "@/components/dashboard/page-shell";
 import { ConnectionError } from "@/components/connection-error";
+import { OverviewView } from "@/components/dashboard/overview-view";
+import { ProjectFrame } from "@/components/dashboard/project-frame";
+import ProjectNotFound from "@/app/dashboard/projects/[id]/not-found";
+import { buildOverview } from "@/lib/dashboard/overview";
+import { getDemoOverview } from "@/lib/demo";
 import { QUOTAS } from "@/lib/quotas";
 import { ProjectsPanel } from "@/app/dashboard/projects-panel";
-import { KeysPanel } from "@/app/dashboard/projects/[id]/keys-panel";
+import { KeysPanel } from "@/app/dashboard/projects/[id]/keys/keys-panel";
 
 export const metadata = { title: "Signed-in pages (fixtures)", robots: { index: false, follow: false } };
 
@@ -16,6 +21,8 @@ const PROJECTS = [
     createdAt: "2026-11-18T23:59:00Z",
   },
 ];
+
+const FIXTURE_NOW = Date.UTC(2026, 10, 21, 12, 30, 0);
 
 const KEYS = [
   { id: "k1", name: "production", prefix: "lm_live_a1b2c3", scopes: ["ingest"], lastUsedAt: "2026-11-20T08:00:00Z", revokedAt: null, createdAt: "2026-11-03T09:00:00Z" },
@@ -47,17 +54,47 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
     case "keys":
     case "keys-empty":
       return (
-        <PageShell>
-          <span className="text-sm text-muted-foreground underline underline-offset-4">All projects</span>
-          <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight">support-agent</h1>
-          <h2 className="mt-8 text-lg font-medium">API keys</h2>
+        <ProjectFrame project={PROJECTS[0]}>
+          <h2 className="text-xl font-semibold tracking-tight">API keys</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Use a key in the SDK or an OTLP exporter. Up to {QUOTAS.keysPerProject} active keys per project. A key is shown once, when you
             create it.
           </p>
           <KeysPanel projectId={PROJECTS[0].id} initial={view === "keys" ? KEYS : []} limit={QUOTAS.keysPerProject} />
-        </PageShell>
+        </ProjectFrame>
       );
+    case "overview":
+    case "overview-7d":
+    case "overview-partial":
+      // The demo's numbers inside the REAL project frame: what a project with data looks like.
+      return (
+        <ProjectFrame project={PROJECTS[0]}>
+          <OverviewView
+            data={{ ...getDemoOverview(view === "overview-7d" ? "7d" : "24h"), truncated: view === "overview-partial" }}
+            basePath="/design/pages"
+            keysHref="/design/pages?view=keys"
+          />
+        </ProjectFrame>
+      );
+    case "overview-empty":
+      return (
+        <ProjectFrame project={PROJECTS[0]}>
+          <OverviewView data={buildOverview({ range: "24h", nowMs: FIXTURE_NOW, rows: [], pricedModels: new Set(), eventsToday: 0, eventsLimit: QUOTAS.eventsPerDayPerProject })} basePath="/design/pages" keysHref="/design/pages?view=keys" />
+        </ProjectFrame>
+      );
+    case "overview-unpriced": {
+      // Only an unpriced model in the last hours: its cost must read as unknown ("—", "no price"), never as $0.00.
+      const hour = Math.floor(FIXTURE_NOW / 3_600_000) * 3_600_000;
+      const lat = [0, 0, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0];
+      const rows = [0, 1, 2].map((i) => ({ bucket: hour - i * 3_600_000, model: "acme-local-7b", calls: 5, errors: 0, inputTokens: 900, outputTokens: 300, costMicro: 0, latSumMs: 1500, lat }));
+      return (
+        <ProjectFrame project={PROJECTS[0]}>
+          <OverviewView data={buildOverview({ range: "24h", nowMs: FIXTURE_NOW, rows, pricedModels: new Set(), eventsToday: 15, eventsLimit: QUOTAS.eventsPerDayPerProject })} basePath="/design/pages" keysHref="/design/pages?view=keys" />
+        </ProjectFrame>
+      );
+    }
+    case "not-found":
+      return <ProjectNotFound />;
     case "capacity-full":
       return <CapacityNotice status="full" />;
     case "capacity-paused":

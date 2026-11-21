@@ -14,8 +14,8 @@ export interface NavItem {
  * Project-scoped tab navigation. The project id is part of every URL (no hidden "selected project" state), so a link
  * always means the same project and IDOR checks happen per request. Horizontally scrollable on narrow screens.
  */
-export function ProjectNav({ projectId, items, basePath }: { projectId: string; items: NavItem[]; basePath?: string }) {
-  const pathname = usePathname();
+export function ProjectNav({ projectId, items, basePath }: { projectId: string; items: readonly NavItem[]; basePath?: string }) {
+  const pathname = usePathname() ?? "";
   const base = basePath ?? `/dashboard/projects/${projectId}`;
   return (
     <nav aria-label="Project" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">

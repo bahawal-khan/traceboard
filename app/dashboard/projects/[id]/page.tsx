@@ -1,38 +1,48 @@
-import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { PageShell } from "@/components/dashboard/page-shell";
-import { NotFoundError } from "@/lib/repo/errors";
-import { listApiKeys } from "@/lib/repo/api-keys";
+import { OverviewView } from "@/components/dashboard/overview-view";
+import { ProjectFrame } from "@/components/dashboard/project-frame";
+import { parseRangeParam } from "@/lib/dashboard/page-state";
 import { ctxFromSession } from "@/lib/repo/ctx";
+import { isNotFoundLike } from "@/lib/repo/errors";
+import { readOverview } from "@/lib/repo/metrics";
 import { getProject } from "@/lib/repo/projects";
-import { QUOTAS } from "@/lib/quotas";
-import { KeysPanel } from "./keys-panel";
 
-export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export const metadata: Metadata = { title: "Overview", robots: { index: false, follow: false } };
+// Per-user data: rendered for every request, never prerendered or shared (the response is also private, no-store: next.config.ts).
+export const dynamic = "force-dynamic";
+
+/**
+ * The project home: the Overview. Same OverviewView as the public /demo, fed by the database reader instead of the static
+ * snapshot. All data comes through lib/repo (session context + RLS); the page holds no SQL and no tenant context of its own.
+ */
+export default async function ProjectOverviewPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ range?: string | string[] }>;
+}) {
+  const [{ id }, query] = await Promise.all([params, searchParams]);
+  const range = parseRangeParam(query.range); // validated; a bad value falls back to 24h
+
   const ctx = await ctxFromSession();
   if (!ctx) redirect("/sign-in");
-  let project, keys;
+
+  let project, data;
   try {
-    [project, keys] = await Promise.all([getProject(ctx, id), listApiKeys(ctx, id)]);
+    // Two independent reads in parallel. Each one proves the project is the caller's; either failing as "not found" ends in
+    // the same page. A database outage is not "not found": it is rethrown to app/dashboard/error.tsx (retry, no details).
+    [project, data] = await Promise.all([getProject(ctx, id), readOverview(ctx, id, range)]);
   } catch (e) {
-    // Not found, not yours, or not a uuid: the same 404 for all three.
-    if (e instanceof NotFoundError || (e instanceof Error && e.name === "ZodError")) notFound();
+    if (isNotFoundLike(e)) notFound();
     throw e;
   }
 
+  const base = `/dashboard/projects/${project.id}`;
   return (
-    <PageShell>
-      <Link href="/dashboard" className="inline-flex min-h-11 items-center text-sm text-muted-foreground underline underline-offset-4 sm:min-h-0">
-        All projects
-      </Link>
-      <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight">{project.name}</h1>
-      <h2 className="mt-8 text-lg font-medium">API keys</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Use a key in the SDK or an OTLP exporter. Up to {QUOTAS.keysPerProject} active keys per project. A key is shown once, when you
-        create it.
-      </p>
-      <KeysPanel projectId={project.id} initial={keys} limit={QUOTAS.keysPerProject} />
-    </PageShell>
+    <ProjectFrame project={project}>
+      <OverviewView data={data} basePath={base} keysHref={`${base}/keys`} />
+    </ProjectFrame>
   );
 }

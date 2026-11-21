@@ -19,6 +19,8 @@ export default function config(phase: string): NextConfig {
       return [
         { source: "/:path*", headers: [...STATIC_SECURITY_HEADERS] },
         { source: "/api/:path*", headers: [API_CACHE_HEADER] },
+        // Signed-in pages show one user's data: never in a shared or CDN cache (the pages are also force-dynamic).
+        { source: "/dashboard/:path*", headers: [API_CACHE_HEADER] },
       ];
     },
   };

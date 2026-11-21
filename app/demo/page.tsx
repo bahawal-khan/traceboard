@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { DemoHeader } from "@/components/dashboard/demo-header";
 import { OverviewView } from "@/components/dashboard/overview-view";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { overviewRangeSchema } from "@/lib/dashboard/types";
+import { parseRangeParam } from "@/lib/dashboard/page-state";
 import { getDemoOverview } from "@/lib/demo";
 
 export const metadata: Metadata = {
@@ -17,13 +17,13 @@ export const metadata: Metadata = {
  */
 export default async function DemoPage({ searchParams }: { searchParams: Promise<{ range?: string | string[] }> }) {
   const { range } = await searchParams;
-  const parsed = overviewRangeSchema.safeParse(Array.isArray(range) ? range[0] : range);
-  const data = getDemoOverview(parsed.success ? parsed.data : "24h");
+  const data = getDemoOverview(parseRangeParam(range)); // the same validation as the signed-in Overview
 
   return (
     <div className="flex flex-1 flex-col">
       <DemoHeader />
       <main className="mx-auto w-full min-w-0 max-w-5xl flex-1 space-y-6 px-4 py-6 sm:py-8">
+        <h1 className="sr-only">Demo project</h1>
         <Alert>
           <Info aria-hidden />
           <AlertTitle>Demo project: sample data</AlertTitle>

@@ -4,11 +4,13 @@ import { ChartCard } from "@/components/charts/chart-card";
 import { StatTile } from "@/components/charts/stat-tile";
 import { StatusBadge } from "@/components/charts/status-badge";
 import { TimeSeriesChart } from "@/components/charts/time-series-chart";
+import { EmptyOverview } from "@/components/dashboard/empty-overview";
 import { QuotaMeter } from "@/components/dashboard/quota-meter";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { overviewState } from "@/lib/dashboard/page-state";
 import { OVERVIEW_RANGES, type OverviewData, type OverviewRange } from "@/lib/dashboard/types";
 import {
   UNKNOWN,
@@ -29,7 +31,7 @@ const RANGE_LABEL: Record<OverviewRange, string> = { "24h": "24 hours", "7d": "7
  * The Overview page body. It knows nothing about where the data came from (database or static demo): it renders an
  * `OverviewData`. Server component; only the chart plots are client components, and they receive plain data.
  */
-export function OverviewView({ data, basePath }: { data: OverviewData; basePath: string }) {
+export function OverviewView({ data, basePath, keysHref }: { data: OverviewData; basePath: string; keysHref?: string }) {
   const t = data.totals;
   const errorRate = t.calls > 0 ? t.errors / t.calls : null;
   const errorStatus = errorRate === null ? null : errorRate >= 0.05 ? ("critical" as const) : errorRate >= 0.01 ? ("warning" as const) : ("good" as const);
@@ -41,39 +43,28 @@ export function OverviewView({ data, basePath }: { data: OverviewData; basePath:
     calls: p.calls,
     input: p.inputTokens,
     output: p.outputTokens,
-    cost: p.costMicro / 1_000_000,
+    // An hour whose only events were on an unpriced model has an UNKNOWN cost, not a zero one: null draws a gap and reads "—".
+    cost: p.costLowerBound && p.costMicro === 0 ? null : p.costMicro / 1_000_000,
     costLb: p.costLowerBound ? 1 : 0, // 1 = this hour has events on an unpriced model: the cost is a lower bound
     p50: p.p50,
     p95: p.p95,
   }));
-  const empty = t.calls === 0;
+  const empty = overviewState(data) === "empty";
   const state = empty ? ("empty" as const) : ("ready" as const);
+
+  if (empty) {
+    // No events in this window: show how to send some, NOT charts of zeros that would look like data.
+    return (
+      <div className="space-y-6">
+        <OverviewHeader data={data} basePath={basePath} />
+        <EmptyOverview range={data.range} basePath={basePath} keysHref={keysHref} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-          <p className="text-sm text-muted-foreground">
-            {formatUtc(data.from)} to {formatUtc(data.to)}
-          </p>
-        </div>
-        <nav aria-label="Time range" className="inline-flex rounded-lg border p-0.5">
-          {OVERVIEW_RANGES.map((r) => (
-            <Link
-              key={r}
-              href={`${basePath}?range=${r}`}
-              aria-current={r === data.range ? "page" : undefined}
-              className={cn(
-                "inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium sm:min-h-8",
-                r === data.range ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {RANGE_LABEL[r]}
-            </Link>
-          ))}
-        </nav>
-      </div>
+      <OverviewHeader data={data} basePath={basePath} />
 
       {data.truncated ? (
         <Alert>
@@ -160,7 +151,9 @@ export function OverviewView({ data, basePath }: { data: OverviewData; basePath:
         <ChartCard
           title="Cost"
           description="Per hour, priced models only"
-          state={state}
+          // Nothing priced to draw: say the cost is UNKNOWN instead of an empty axis that looks like "no cost".
+          state={costKnown ? state : "empty"}
+          emptyMessage={`Cost is unknown for this range: its events are on models without a price (${unpriced}).`}
           footnote={data.unpricedCalls > 0 ? `Excludes ${formatInt(data.unpricedCalls)} events on ${unpriced} (no price). Their cost is unknown, not zero.` : undefined}
           table={<SeriesTable rows={rows} columns={[{ key: "cost", label: "Cost", fmt: formatCostUsd, lowerBoundKey: "costLb" }]} />}
         >
@@ -239,6 +232,35 @@ export function OverviewView({ data, basePath }: { data: OverviewData; basePath:
           </Table>
         )}
       </Card>
+    </div>
+  );
+}
+
+/** Title, window and range switch. The page's own <h1> is the project (or demo) name, so this is an <h2>. */
+function OverviewHeader({ data, basePath }: { data: OverviewData; basePath: string }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight">Overview</h2>
+        <p className="text-sm text-muted-foreground">
+          {formatUtc(data.from)} to {formatUtc(data.to)}
+        </p>
+      </div>
+      <nav aria-label="Time range" className="inline-flex rounded-lg border p-0.5">
+        {OVERVIEW_RANGES.map((r) => (
+          <Link
+            key={r}
+            href={`${basePath}?range=${r}`}
+            aria-current={r === data.range ? "page" : undefined}
+            className={cn(
+              "inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium sm:min-h-8",
+              r === data.range ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {RANGE_LABEL[r]}
+          </Link>
+        ))}
+      </nav>
     </div>
   );
 }

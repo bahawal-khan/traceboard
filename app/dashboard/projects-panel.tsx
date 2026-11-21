@@ -141,6 +141,9 @@ export function ProjectsPanel({ initial, limit }: { initial: Project[]; limit: n
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Link href={`/dashboard/projects/${p.id}`} className={buttonVariants({ variant: "outline", className: TAP })}>
+                      Overview
+                    </Link>
+                    <Link href={`/dashboard/projects/${p.id}/keys`} className={buttonVariants({ variant: "outline", className: TAP })}>
                       API keys
                     </Link>
                     <Button variant="outline" className={TAP} disabled={busy} onClick={() => setEditing({ id: p.id, name: p.name })}>
