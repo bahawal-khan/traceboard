@@ -15,8 +15,8 @@ Streams: if the caller did not set `stream_options`, `{"include_usage": true}` i
 final usage-only chunk (empty `choices`) is hidden from the caller, who asked for no such chunk. If the caller set
 `stream_options` themselves, nothing is changed and the usage chunk is passed through as they requested.
 
-Not instrumented (yet): `with_raw_response` / `with_streaming_response`, `client.responses`, `client.beta.*`, and clients made
-by `client.with_options(...)` (call `instrument_openai` on those too). The wrapper never raises into the host application;
+Not instrumented (yet): `with_raw_response` / `with_streaming_response` (those calls pass through untouched and are not
+recorded), `client.responses`, `client.beta.*`, and clients made by `client.with_options(...)` (call `instrument_openai` on those too). The wrapper never raises into the host application;
 instrumentation failures are swallowed and counted.
 """
 from __future__ import annotations

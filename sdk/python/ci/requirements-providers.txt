@@ -1,0 +1,11 @@
+# DEV/CI ONLY. The REAL provider SDKs the wrappers are tested against (never a dependency of llm-monitor itself).
+# Exact pins, chosen from PyPI on 2026-11-21 (the newest release whose Requires-Python admits each interpreter):
+#   openai    3.57.0 (>=3.10)  | newest that admits 3.9: 2.48.0
+#   anthropic 2.12.0 (>=3.10)  | newest that admits 3.9: 0.125.0
+# Python 3.9 is the SDK minimum, and both packages dropped it in their newest major versions, so it gets the older pins.
+# Transitive dependencies (httpx, pydantic, ...) are NOT pinned on purpose: drift in them is exactly what this job should notice.
+# Bump deliberately: change the pins, run the job, fix the wrappers if the real packages changed.
+openai==2.48.0; python_version < "3.10"
+openai==3.57.0; python_version >= "3.10"
+anthropic==0.125.0; python_version < "3.10"
+anthropic==2.12.0; python_version >= "3.10"

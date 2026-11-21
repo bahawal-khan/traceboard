@@ -98,3 +98,58 @@ jobs:
       - name: Stop containers
         if: always()
         run: docker compose -f ci/docker-compose.db.yml down -v
+
+  # Python SDK against the REAL openai and anthropic packages (dev-only exact pins in sdk/python/ci/requirements-providers*.txt),
+  # talking to a local fake HTTP server: no API keys, no secrets, no network beyond pip. The matrix is every Python the package
+  # claims (pyproject classifiers; tests/test_ci_config.py keeps both lists equal). Python 3.9 gets the older provider releases
+  # because the newest majors require 3.10+; one extra entry runs those older releases on a current Python too.
+  sdk-python:
+    name: sdk-python (py${{ matrix.python }}, ${{ matrix.pins }} pins)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        pins: [current]
+        include:
+          - python: "3.12"
+            pins: legacy
+    defaults:
+      run:
+        working-directory: sdk/python
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      LLM_MONITOR_PIN_SET: ${{ matrix.pins }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            sdk/python/pyproject.toml
+            sdk/python/ci/requirements-providers.txt
+            sdk/python/ci/requirements-providers-legacy.txt
+
+      - name: Check the interpreter and the pins (fails clearly if this Python is unsupported)
+        run: python ci/check_environment.py
+
+      - name: Install the SDK (it has no dependencies)
+        run: python -m pip install -e ".[dev]"
+
+      # The SDK must work with no provider package installed: the provider tests skip themselves here.
+      - name: SDK tests without any provider package
+        run: python -X dev -W error::ResourceWarning -m pytest -q
+
+      - name: Install the real provider packages (pinned, dev-only)
+        run: python -m pip install -r "ci/requirements-providers${{ matrix.pins == 'legacy' && '-legacy' || '' }}.txt"
+
+      - name: Installed provider versions are exactly the pinned ones
+        run: python ci/check_environment.py --require-providers
+
+      # A missing or wrong-version package FAILS here instead of skipping (LLM_MONITOR_REQUIRE_REAL_SDKS=1).
+      - name: SDK tests against the real openai and anthropic packages
+        env:
+          LLM_MONITOR_REQUIRE_REAL_SDKS: "1"
+        run: python -X dev -W error::ResourceWarning -m pytest -q -ra

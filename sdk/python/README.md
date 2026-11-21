@@ -76,6 +76,15 @@ python -m pip install -e ".[dev]"     # installs pytest; the SDK itself has no d
 python -m pytest                      # or, with no extra packages at all:  python -m unittest discover -s tests
 ```
 
+The wrappers are also tested against the REAL `openai` and `anthropic` packages (talking to a local fake HTTP server, so no API
+key and no network). Those tests are skipped unless the packages are installed; CI installs them at exact pins
+(`ci/requirements-providers.txt`, dev-only: they are never a dependency of the SDK) on Python 3.9 to 3.15:
+
+```bash
+python -m pip install -r ci/requirements-providers.txt
+LLM_MONITOR_REQUIRE_REAL_SDKS=1 python -m pytest   # a missing or wrong-version package now FAILS instead of skipping
+```
+
 ## Traces, tools and OpenAI
 
 ```python
