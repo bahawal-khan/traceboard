@@ -137,7 +137,7 @@ function pageSize(limit: number | undefined): number {
 // agg    one row per trace_id (hash aggregate over at most `cap` narrow rows)
 // page   cursor and status filter, ordered by (start desc, trace_id desc), page size + 1 (the extra row only proves "more")
 // The left join keeps ONE row (with null trace columns) when the page is empty, so `scanned`/`truncated` are always returned.
-function listSelect(
+export function traceListStatement(
   t: Tx,
   a: {
     pid: string;
@@ -229,7 +229,7 @@ export async function listTraces(ctx: SessionCtx, projectIdRaw: string, opts: Tr
 
   const [proj, raw] = await withTenant(ctx, (t) => [
     projectSelect(t, ctx, pid),
-    listSelect(t, {
+    traceListStatement(t, {
       pid,
       fromIso: new Date(window.fromMs).toISOString(),
       toIso: new Date(window.toMs).toISOString(),
