@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { ProjectFrame } from "@/components/dashboard/project-frame";
 import { TracesView } from "@/components/dashboard/traces-view";
+import { traceDetailHref } from "@/lib/dashboard/trace-detail-view";
 import {
   TRACES_PAGE_SIZE,
   parseCursorParam,
@@ -65,6 +66,7 @@ export default async function ProjectTracesPage({
         truncated={page.truncated}
         basePath={`${base}/traces`}
         keysHref={`${base}/keys`}
+        rowHref={(traceId) => traceDetailHref(`${base}/traces`, traceId)}
       />
     </ProjectFrame>
   );

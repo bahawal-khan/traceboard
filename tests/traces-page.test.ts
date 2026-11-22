@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TracesView, type TracesViewProps } from "@/components/dashboard/traces-view";
 import { PROJECT_NAV_ITEMS } from "@/lib/dashboard/nav";
+import { traceDetailHref } from "@/lib/dashboard/trace-detail-view";
 import {
   DEFAULT_TRACE_RANGE, TRACES_PAGE_SIZE, buildTracesHref, parseCursorParam, parseTraceRange, parseTraceStatus, repoStatus,
   toTraceRowView, traceCostView, traceRangeWindow,
@@ -18,7 +19,7 @@ const item = (o: Partial<TraceListItem> = {}): TraceListItem => ({
   unpricedEvents: 0, rootName: "agent.run", hasRoot: true, ...o,
 });
 const view = (o: Partial<TracesViewProps> = {}) =>
-  renderToStaticMarkup(createElement(TracesView, { items: [item()], range: "24h", status: "all", hasCursor: false, nextCursor: null, truncated: false, basePath: BASE, keysHref: KEYS, ...o }));
+  renderToStaticMarkup(createElement(TracesView, { items: [item()], range: "24h", status: "all", hasCursor: false, nextCursor: null, truncated: false, basePath: BASE, keysHref: KEYS, rowHref: (id: string) => traceDetailHref(BASE, id), ...o }));
 const count = (s: string, needle: string) => s.split(needle).length - 1;
 
 describe("URL parameters", () => {
@@ -119,12 +120,16 @@ describe("TracesView HTML", () => {
     expect(html).toMatch(/<svg[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/svg><span>2 errors<\/span>/);
     expect(html).toContain("<span>OK</span>");
   });
-  it("rows are not links (no trace detail yet): the only links are filters, the pager and the nav", () => {
+  it("every row links to its trace detail, encoded, in both the table and the cards; every other link is a filter, the pager or the nav", () => {
     const hrefs = [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]!);
     for (const h of hrefs) expect(h.startsWith(BASE), h).toBe(true);
-    expect(hrefs.some((h) => h.includes("tr-"))).toBe(false);
-    expect(hrefs.some((h) => /\/traces\//.test(h))).toBe(false);
+    const details = hrefs.filter((h) => h.startsWith(`${BASE}/`));
+    expect(details).toHaveLength(rows.length * 2); // table + cards
+    for (const r of rows) expect(details.filter((h) => h === `${BASE}/${encodeURIComponent(r.traceId)}`)).toHaveLength(2);
+    // detail links carry no query string and nothing but the encoded id
+    for (const h of details) expect(h).toMatch(/^\/dashboard\/projects\/p1\/traces\/[A-Za-z0-9._~%-]+$/);
   });
+
   it("tap targets are 44 px on small screens and nothing forces a wide layout", () => {
     expect(html).toContain("min-h-11");
     expect(html).not.toMatch(/min-w-\[|w-\[\d{3,}px\]/);
@@ -213,12 +218,15 @@ describe("static checks", () => {
     expect(page).toContain('export const dynamic = "force-dynamic"');
     expect(page).toMatch(/robots: \{ index: false/);
   });
-  it("no client component, no locale formatting, no raw HTML, no links to a trace detail page", () => {
+  it("no client component, no locale formatting, no raw HTML; the row link comes only from the rowHref prop", () => {
     for (const f of sources) {
       const s = read(f);
       expect(s, f).not.toMatch(/["']use client["']/);
       expect(s, f).not.toMatch(/toLocale|Intl\.DateTimeFormat|dangerouslySetInnerHTML/);
     }
-    expect(read("components/dashboard/traces-view.tsx")).not.toMatch(/\/traces\/\$|traceId\}`|href=\{`[^`]*\$\{r\.traceId/);
+    // the component never builds a detail URL itself (the page and the fixtures decide where a row leads)
+    expect(read("components/dashboard/traces-view.tsx")).not.toMatch(/\/traces\/\$|href=\{`/);
+    expect(read("components/dashboard/traces-view.tsx")).toContain("href={rowHref(");
+    expect(page).toContain("traceDetailHref(`${base}/traces`, traceId)");
   });
 });

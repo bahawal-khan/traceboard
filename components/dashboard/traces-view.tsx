@@ -34,15 +34,17 @@ export interface TracesViewProps {
   truncated: boolean;
   basePath: string;
   keysHref?: string;
+  /** Where a row leads: the trace detail page (the dev fixtures point at a fixture detail page instead). */
+  rowHref: (traceId: string) => string;
   /** Fixed query parameters of the host page (dev fixtures only). */
   extraParams?: Record<string, string>;
 }
 
 /**
- * The Traces list body. Server component, no client JavaScript: filters and paging are plain links. Rows are NOT links yet
- * (trace detail is P3.6). Shows structure only: names, counts, times and cost, never any message text.
+ * The Traces list body. Server component, no client JavaScript: filters, paging and the rows are plain links (a row opens
+ * the trace detail). Shows structure only: names, counts, times and cost, never any message text.
  */
-export function TracesView({ items, range, status, hasCursor, nextCursor, truncated, basePath, keysHref, extraParams }: TracesViewProps) {
+export function TracesView({ items, range, status, hasCursor, nextCursor, truncated, basePath, keysHref, rowHref, extraParams }: TracesViewProps) {
   const href = (s: { range?: TraceRange; status?: TraceStatusFilter; cursor?: string | null }) =>
     buildTracesHref(basePath, { range: s.range ?? range, status: s.status ?? status, cursor: s.cursor }, extraParams);
   const rows = items.map(toTraceRowView);
@@ -89,12 +91,12 @@ export function TracesView({ items, range, status, hasCursor, nextCursor, trunca
       ) : (
         <>
           <div className="hidden md:block">
-            <TraceTable rows={rows} />
+            <TraceTable rows={rows} rowHref={rowHref} />
           </div>
           <ul aria-label="Traces" className="space-y-3 md:hidden">
             {rows.map((r) => (
               <li key={r.key}>
-                <TraceCard row={r} />
+                <TraceCard row={r} rowHref={rowHref} />
               </li>
             ))}
           </ul>
@@ -195,16 +197,27 @@ function ErrorBadge({ label }: { label: string | null }) {
   );
 }
 
-function RootName({ row }: { row: TraceRowView }) {
+/**
+ * The link of a row. `stretch` extends its click area over the whole card (a pseudo-element covering the nearest
+ * positioned ancestor), so a card is one big tap target; in the table the link fills its cell.
+ */
+function RootName({ row, href, stretch }: { row: TraceRowView; href: string; stretch?: boolean }) {
   return (
-    <div className="min-w-0">
-      <div className={cn("truncate font-medium", row.orphan && "italic text-muted-foreground")} title={row.rootTitle}>
+    <Link
+      href={href}
+      aria-label={`Open trace ${row.rootLabel}, ${row.traceId}`}
+      className={cn(
+        "block min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        stretch && "after:absolute after:inset-0 after:content-['']",
+      )}
+    >
+      <span className={cn("block truncate font-medium underline-offset-4 hover:underline", row.orphan && "italic text-muted-foreground")} title={row.rootTitle}>
         {row.rootLabel}
-      </div>
-      <div className="truncate font-mono text-xs text-muted-foreground" title={row.traceId}>
+      </span>
+      <span className="block truncate font-mono text-xs text-muted-foreground" title={row.traceId}>
         {row.traceId}
-      </div>
-    </div>
+      </span>
+    </Link>
   );
 }
 
@@ -216,7 +229,7 @@ function Cost({ row }: { row: TraceRowView }) {
   );
 }
 
-function TraceTable({ rows }: { rows: TraceRowView[] }) {
+function TraceTable({ rows, rowHref }: { rows: TraceRowView[]; rowHref: (traceId: string) => string }) {
   return (
     <Card className="p-0">
       <Table className="table-fixed">
@@ -240,7 +253,7 @@ function TraceTable({ rows }: { rows: TraceRowView[] }) {
                 <span className="block">{r.started.slice(11)}</span>
               </TableCell>
               <TableCell>
-                <RootName row={r} />
+                <RootName row={r} href={rowHref(r.traceId)} />
               </TableCell>
               <TableCell className="text-right tabular-nums">{r.duration}</TableCell>
               <TableCell className="text-right tabular-nums">{r.spans}</TableCell>
@@ -259,11 +272,11 @@ function TraceTable({ rows }: { rows: TraceRowView[] }) {
   );
 }
 
-function TraceCard({ row }: { row: TraceRowView }) {
+function TraceCard({ row, rowHref }: { row: TraceRowView; rowHref: (traceId: string) => string }) {
   return (
-    <Card className="gap-3 p-4">
+    <Card className="relative gap-3 p-4 hover:bg-muted/40">
       <div className="flex items-start justify-between gap-3">
-        <RootName row={row} />
+        <RootName row={row} href={rowHref(row.traceId)} stretch />
         <div className="shrink-0">
           <ErrorBadge label={row.errorLabel} />
         </div>

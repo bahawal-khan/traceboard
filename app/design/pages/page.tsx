@@ -4,7 +4,10 @@ import { PageShell } from "@/components/dashboard/page-shell";
 import { ConnectionError } from "@/components/connection-error";
 import { OverviewView } from "@/components/dashboard/overview-view";
 import { ProjectFrame } from "@/components/dashboard/project-frame";
+import { TraceDetailPageView } from "@/components/dashboard/trace-detail-page-view";
 import { TracesView } from "@/components/dashboard/traces-view";
+import { buildTraceDetailView } from "@/lib/dashboard/trace-detail-view";
+import { TRACE_FIXTURE_NAMES, traceFixture } from "@/lib/dashboard/trace-fixtures";
 import type { TraceListItem } from "@/lib/repo/traces";
 import ProjectNotFound from "@/app/dashboard/projects/[id]/not-found";
 import { buildOverview } from "@/lib/dashboard/overview";
@@ -46,7 +49,7 @@ const KEYS = [
 
 /**
  * Development-only: renders the REAL Phase 1 components with fixture data, because the signed-in pages cannot be opened
- * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|capacity-full|capacity-paused|error`.
+ * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|large>`.
  * A production build answers 404.
  */
 export default async function PagesFixtures({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
@@ -126,6 +129,7 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
             truncated={view === "traces-partial"}
             basePath="/design/pages"
             keysHref="/design/pages?view=keys"
+            rowHref={() => "/design/pages?view=trace-ok"}
             extraParams={{ view }}
           />
         </ProjectFrame>
@@ -139,7 +143,16 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
       return <CapacityNotice status="paused" />;
     case "error":
       return <ConnectionError reference="1234567890" />;
-    default:
-      notFound();
+    default: {
+      const m = /^trace-(.+)$/.exec(view);
+      const name = TRACE_FIXTURE_NAMES.find((n) => n === m?.[1]);
+      if (!name) notFound();
+      const fx = traceFixture(name);
+      return (
+        <ProjectFrame project={PROJECTS[0]}>
+          <TraceDetailPageView view={buildTraceDetailView(fx)} backHref="/design/pages?view=traces" />
+        </ProjectFrame>
+      );
+    }
   }
 }

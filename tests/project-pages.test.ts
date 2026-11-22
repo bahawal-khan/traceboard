@@ -15,7 +15,7 @@ import nextConfig from "@/next.config";
 const PROJECT_DIR = "app/dashboard/projects/[id]";
 const read = (f: string) => readFileSync(f, "utf8");
 
-const PAGES = [`${PROJECT_DIR}/page.tsx`, `${PROJECT_DIR}/keys/page.tsx`, `${PROJECT_DIR}/traces/page.tsx`];
+const PAGES = [`${PROJECT_DIR}/page.tsx`, `${PROJECT_DIR}/keys/page.tsx`, `${PROJECT_DIR}/traces/page.tsx`, `${PROJECT_DIR}/traces/[traceId]/page.tsx`];
 const PROJECT_FILES = [
   ...PAGES,
   `${PROJECT_DIR}/not-found.tsx`,
@@ -23,6 +23,10 @@ const PROJECT_FILES = [
   "components/dashboard/empty-overview.tsx",
   "components/dashboard/overview-view.tsx",
   "components/dashboard/traces-view.tsx",
+  "components/dashboard/trace-detail-page-view.tsx",
+  "components/dashboard/trace-explorer.tsx",
+  "components/dashboard/trace-waterfall.tsx",
+  "components/dashboard/copy-button.tsx",
 ];
 
 describe("the project pages reach data only through lib/repo", () => {
@@ -43,10 +47,10 @@ describe("the project pages reach data only through lib/repo", () => {
     });
   }
 
-  it("only repo modules that exist for the dashboard are imported (ctx, errors, projects, api-keys, metrics, traces)", () => {
+  it("only repo modules that exist for the dashboard are imported (ctx, errors, projects, api-keys, metrics, traces, trace-detail)", () => {
     for (const f of PROJECT_FILES) {
       for (const m of read(f).matchAll(/from ["']@\/lib\/repo\/([\w-]+)["']/g)) {
-        expect(["ctx", "errors", "projects", "api-keys", "metrics", "traces"], `${f} imports lib/repo/${m[1]}`).toContain(m[1]);
+        expect(["ctx", "errors", "projects", "api-keys", "metrics", "traces", "trace-detail"], `${f} imports lib/repo/${m[1]}`).toContain(m[1]);
       }
     }
   });
@@ -96,7 +100,7 @@ describe("the project pages are per-user and never cached", () => {
     expect(PAGES.every((f) => f.startsWith("app/dashboard/"))).toBe(true);
     expect(read("proxy.ts")).toContain('createRouteMatcher(["/dashboard(.*)"])');
     // ... and the bypass lists (API-key and cron routes skip Clerk) do not match any project page path
-    for (const path of ["/dashboard/projects/abc", "/dashboard/projects/abc/keys", "/dashboard/projects/abc/traces", "/dashboard/projects/abc/traces?range=7d&cursor=x", "/dashboard/projects/abc?range=7d"]) {
+    for (const path of ["/dashboard/projects/abc", "/dashboard/projects/abc/keys", "/dashboard/projects/abc/traces", "/dashboard/projects/abc/traces/tr-1", "/dashboard/projects/abc/traces/a%2Fb", "/dashboard/projects/abc/traces?range=7d&cursor=x", "/dashboard/projects/abc?range=7d"]) {
       expect(isApiKeyRoute(path), path).toBe(false);
       expect(isCronRoute(path), path).toBe(false);
     }
@@ -147,6 +151,11 @@ describe("navigation", () => {
       const page = item.segment === "" ? `${PROJECT_DIR}/page.tsx` : `${PROJECT_DIR}/${item.segment}/page.tsx`;
       expect(existsSync(page), `tab "${item.label}" -> ${page}`).toBe(true);
     }
+  });
+  it("the trace detail page lives under the Traces tab, so that tab stays active on it", () => {
+    expect(existsSync(`${PROJECT_DIR}/traces/[traceId]/page.tsx`)).toBe(true);
+    const nav = read("components/dashboard/project-nav.tsx");
+    expect(nav).toContain("pathname.startsWith(`${href}/`)");
   });
   it("every page folder under a project has a tab (no hidden pages, no dead links)", () => {
     const withPage = dirs.filter((d) => existsSync(`${PROJECT_DIR}/${d}/page.tsx`));
