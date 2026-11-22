@@ -6,7 +6,7 @@ import type { SpanInput } from "@/lib/dashboard/trace-tree";
  * No randomness and no clock, so the same call always returns the same spans.
  */
 
-export const TRACE_FIXTURE_NAMES = ["ok", "failed", "orphan", "cycle", "deep", "unpriced", "partial", "large"] as const;
+export const TRACE_FIXTURE_NAMES = ["ok", "failed", "orphan", "cycle", "deep", "unpriced", "partial", "instant", "large"] as const;
 export type TraceFixtureName = (typeof TRACE_FIXTURE_NAMES)[number];
 
 export interface TraceFixture {
@@ -115,6 +115,15 @@ function partial(): SpanInput[] {
   return spans;
 }
 
+/** Every span starts and ends in the same millisecond: the total duration is 0 ms. */
+function instant(): SpanInput[] {
+  return [
+    span("i1", null, "cache.lookup", 0, 0, { kind: "tool" }),
+    span("i2", "i1", "key.hash", 0, 0),
+    span("i3", "i1", "result.decode", 0, 0),
+  ];
+}
+
 /** Exactly 2,000 spans: a root, 40 steps, and 49 children per step (every 7th child has a child of its own). */
 function large(): SpanInput[] {
   const spans: SpanInput[] = [span("L0", null, "agent.run", 0, 120_000, { kind: "agent" })];
@@ -157,10 +166,11 @@ const ID: Record<TraceFixtureName, string> = {
   deep: "dee9a1b2c3d4e5f60718293a4b5c6d7e",
   unpriced: "b7c8d9e0f1a2b3c4d5e6f708192a3b4c",
   partial: "9a7b1a1b2c3d4e5f60718293a4b5c6d7",
+  instant: "1257a17c3d4e5f60718293a4b5c6d7e8",
   large: "1a2b3c4d5e6f708192a3b4c5d6e7f809",
 };
 
 export function traceFixture(name: TraceFixtureName): TraceFixture {
-  const build: Record<TraceFixtureName, () => SpanInput[]> = { ok, failed, orphan, cycle, deep, unpriced, partial, large };
+  const build: Record<TraceFixtureName, () => SpanInput[]> = { ok, failed, orphan, cycle, deep, unpriced, partial, instant, large };
   return { traceId: ID[name], spans: build[name](), truncated: name === "partial" || name === "large" };
 }

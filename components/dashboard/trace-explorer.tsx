@@ -6,7 +6,7 @@ import { TraceWaterfall } from "@/components/dashboard/trace-waterfall";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { TABLE_ROW_LIMIT, describeSpan, type SpanView } from "@/lib/dashboard/trace-detail-view";
+import { TABLE_ROW_LIMIT, describeSpan, scaleSubtitle, type SpanView } from "@/lib/dashboard/trace-detail-view";
 import { formatInt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +16,7 @@ type Mode = "waterfall" | "table";
  * The interactive part of the trace page: the virtualised waterfall, the bounded table fallback, and the panel of the
  * selected span. The spans arrive already built (plain data); the panel shows metadata only, never message content.
  */
-export function TraceExplorer({ spans, totalLabel }: { spans: readonly SpanView[]; totalLabel: string }) {
+export function TraceExplorer({ spans, totalMs }: { spans: readonly SpanView[]; totalMs: number }) {
   const [mode, setMode] = useState<Mode>("waterfall");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selected = selectedKey === null ? null : (spans.find((s) => s.key === selectedKey) ?? null);
@@ -26,9 +26,7 @@ export function TraceExplorer({ spans, totalLabel }: { spans: readonly SpanView[
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold">Spans</h3>
-          <p className="text-sm text-muted-foreground">
-            {formatInt(spans.length)} {spans.length === 1 ? "span" : "spans"} on a {totalLabel} scale. Bars show when each span ran.
-          </p>
+          <p className="text-sm text-muted-foreground">{scaleSubtitle(spans.length, totalMs)}</p>
         </div>
         <div className="inline-flex rounded-lg border p-0.5" role="group" aria-label="View">
           <ModeButton active={mode === "waterfall"} onClick={() => setMode("waterfall")}>

@@ -216,3 +216,12 @@ describe("static checks of the sources", () => {
     expect(w).toContain("estimateSize: () => WATERFALL_ROW_HEIGHT");
   });
 });
+
+describe("the 0 ms trace", () => {
+  it("says all spans ran within the same millisecond, not '0 ms scale'", () => {
+    const h = html(viewOf("instant"));
+    expect(h).toContain("All spans ran within the same millisecond.");
+    expect(h).not.toMatch(/on a 0 ms scale/);
+    expect(h).toContain("Duration");
+  });
+});

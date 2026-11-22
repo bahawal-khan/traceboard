@@ -247,6 +247,18 @@ export function buildTraceDetailView(input: { traceId: string; spans: readonly S
   };
 }
 
+/**
+ * The line under "Spans". A trace that lasts under a millisecond (it shows as "0 ms") has no scale to speak of, so it says
+ * so instead of "on a 0 ms scale".
+ */
+export function scaleSubtitle(spanCount: number, totalMs: number): string {
+  const spans = `${formatInt(spanCount)} ${spanCount === 1 ? "span" : "spans"}`;
+  if (!(totalMs >= 0.5)) {
+    return spanCount === 1 ? "1 span, which ran in under a millisecond." : `${spans}. All spans ran within the same millisecond.`;
+  }
+  return `${spans} on a ${formatDuration(totalMs)} scale. Bars show when each span ran.`;
+}
+
 // ---- selected span panel ----------------------------------------------------------------------------------------------
 
 export interface SpanDescription {

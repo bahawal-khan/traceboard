@@ -5,7 +5,6 @@ import { CopyButton } from "@/components/dashboard/copy-button";
 import { TraceExplorer } from "@/components/dashboard/trace-explorer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
-import { formatDuration } from "@/lib/format";
 import type { NoticeId, TraceDetailView } from "@/lib/dashboard/trace-detail-view";
 
 const NOTICE_ICON: Record<NoticeId, LucideIcon> = {
@@ -78,7 +77,7 @@ export function TraceDetailPageView({ view, backHref }: { view: TraceDetailView;
         </div>
       ) : null}
 
-      <TraceExplorer spans={view.spans} totalLabel={formatDuration(view.totalMs)} />
+      <TraceExplorer spans={view.spans} totalMs={view.totalMs} />
     </div>
   );
 }

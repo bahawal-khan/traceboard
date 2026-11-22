@@ -121,8 +121,9 @@ describe("not found is one page", () => {
     expect(existsSync(f)).toBe(true);
     const src = read(f);
     expect(src).not.toMatch(/params|useParams|\$\{|\{id\}|\{project|searchParams|headers\(|cookies\(/);
-    expect(src).toContain("Project not found");
-    expect(src).toContain("does not exist, or you do not have access to it");
+    expect(src).toContain(">Not found<");
+    expect(src).not.toMatch(/Project not found|Trace not found|No such/i);
+    expect(src).toContain("This page does not exist, or you do not have access to it.");
   });
   it("a layout does not do the lookup (a layout cannot render its own segment's not-found page)", () => {
     expect(existsSync(`${PROJECT_DIR}/layout.tsx`)).toBe(false);

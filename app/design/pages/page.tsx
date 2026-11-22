@@ -49,7 +49,7 @@ const KEYS = [
 
 /**
  * Development-only: renders the REAL Phase 1 components with fixture data, because the signed-in pages cannot be opened
- * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|large>`.
+ * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
  * A production build answers 404.
  */
 export default async function PagesFixtures({ searchParams }: { searchParams: Promise<{ view?: string }> }) {

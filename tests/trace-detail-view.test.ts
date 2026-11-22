@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_VISUAL_INDENT_LEVELS, MIN_BAR_PCT, barGeometry, buildTraceDetailView, describeSpan, isSelectKey, moveActive, parseTraceIdParam, shortTraceId,
-  spanAriaLabel, traceDetailHref, traceTotals, type SpanView,
+  scaleSubtitle, spanAriaLabel, traceDetailHref, traceTotals, type SpanView,
 } from "@/lib/dashboard/trace-detail-view";
 import { TRACE_FIXTURE_NAMES, traceFixture } from "@/lib/dashboard/trace-fixtures";
 import { MAX_TREE_DEPTH, type SpanInput } from "@/lib/dashboard/trace-tree";
@@ -243,5 +243,28 @@ describe("the fixtures through the real builder", () => {
     expect(built.large.spans.some((s) => s.isError)).toBe(true);
     expect(built.large.spans.some((s) => s.marker)).toBe(true);
     expect(built.large.spans.some((s) => s.unpriced)).toBe(true);
+  });
+});
+
+describe("the subtitle under Spans", () => {
+  it("normally names the scale", () => {
+    expect(scaleSubtitle(7, 4820)).toBe("7 spans on a 4.82 s scale. Bars show when each span ran.");
+    expect(scaleSubtitle(1, 1500)).toBe("1 span on a 1.5 s scale. Bars show when each span ran.");
+    expect(scaleSubtitle(2, 1)).toBe("2 spans on a 1 ms scale. Bars show when each span ran.");
+  });
+  it("never says '0 ms scale': a trace within one millisecond says so", () => {
+    for (const total of [0, 0.2, 0.49]) {
+      const t = scaleSubtitle(3, total);
+      expect(t).toBe("3 spans. All spans ran within the same millisecond.");
+      expect(t).not.toMatch(/0 ms/);
+    }
+    expect(scaleSubtitle(1, 0)).toBe("1 span, which ran in under a millisecond.");
+    expect(scaleSubtitle(2, Number.NaN)).toBe("2 spans. All spans ran within the same millisecond.");
+  });
+  it("the instant fixture has a 0 ms total and a clean page of bars", () => {
+    const v = buildTraceDetailView(traceFixture("instant"));
+    expect(v.totalMs).toBe(0);
+    expect(v.summary.duration).toBe("0 ms");
+    for (const s of v.spans) expect(s.leftPct + s.widthPct).toBeLessThanOrEqual(100);
   });
 });

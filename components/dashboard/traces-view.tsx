@@ -10,12 +10,12 @@ import {
   TRACE_STATUS_FILTERS,
   buildTracesHref,
   toTraceRowView,
+  type TraceItemInput,
   type TraceRange,
   type TraceRowView,
   type TraceStatusFilter,
 } from "@/lib/dashboard/traces-view";
 import { formatInt } from "@/lib/format";
-import type { TraceListItem } from "@/lib/repo/traces";
 import { cn } from "@/lib/utils";
 
 const RANGE_LABEL: Record<TraceRange, string> = { "24h": "24 hours", "7d": "7 days", "14d": "14 days" };
@@ -23,7 +23,7 @@ const RANGE_TEXT: Record<TraceRange, string> = { "24h": "the last 24 hours", "7d
 const STATUS_LABEL: Record<TraceStatusFilter, string> = { all: "All traces", errors: "Errors only" };
 
 export interface TracesViewProps {
-  items: readonly TraceListItem[];
+  items: readonly TraceItemInput[];
   range: TraceRange;
   status: TraceStatusFilter;
   /** True when this page was reached with a cursor (so a link back to the newest traces makes sense). */
@@ -38,13 +38,19 @@ export interface TracesViewProps {
   rowHref: (traceId: string) => string;
   /** Fixed query parameters of the host page (dev fixtures only). */
   extraParams?: Record<string, string>;
+  /**
+   * "demo": the static public demo. Its data is a frozen sample, so there is no range or status filter and no paging, and
+   * the text says "the demo traces" instead of a time window. Everything else (rows, cost rules, links) is the same code.
+   */
+  variant?: "live" | "demo";
 }
 
 /**
  * The Traces list body. Server component, no client JavaScript: filters, paging and the rows are plain links (a row opens
  * the trace detail). Shows structure only: names, counts, times and cost, never any message text.
  */
-export function TracesView({ items, range, status, hasCursor, nextCursor, truncated, basePath, keysHref, rowHref, extraParams }: TracesViewProps) {
+export function TracesView({ items, range, status, hasCursor, nextCursor, truncated, basePath, keysHref, rowHref, extraParams, variant = "live" }: TracesViewProps) {
+  const demo = variant === "demo";
   const href = (s: { range?: TraceRange; status?: TraceStatusFilter; cursor?: string | null }) =>
     buildTracesHref(basePath, { range: s.range ?? range, status: s.status ?? status, cursor: s.cursor }, extraParams);
   const rows = items.map(toTraceRowView);
@@ -55,24 +61,28 @@ export function TracesView({ items, range, status, hasCursor, nextCursor, trunca
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Traces</h2>
-          <p className="text-sm text-muted-foreground">Newest first, times in UTC. Showing {RANGE_TEXT[range]}.</p>
+          <p className="text-sm text-muted-foreground">
+            {demo ? "A sample of the demo project's traces, newest first, times in UTC." : `Newest first, times in UTC. Showing ${RANGE_TEXT[range]}.`}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <nav aria-label="Time range" className="inline-flex rounded-lg border p-0.5">
-            {TRACE_RANGES.map((r) => (
-              <Pill key={r} href={href({ range: r, cursor: null })} active={r === range}>
-                {RANGE_LABEL[r]}
-              </Pill>
-            ))}
-          </nav>
-          <nav aria-label="Status" className="inline-flex rounded-lg border p-0.5">
-            {TRACE_STATUS_FILTERS.map((s) => (
-              <Pill key={s} href={href({ status: s, cursor: null })} active={s === status}>
-                {STATUS_LABEL[s]}
-              </Pill>
-            ))}
-          </nav>
-        </div>
+        {demo ? null : (
+          <div className="flex flex-wrap gap-3">
+            <nav aria-label="Time range" className="inline-flex rounded-lg border p-0.5">
+              {TRACE_RANGES.map((r) => (
+                <Pill key={r} href={href({ range: r, cursor: null })} active={r === range}>
+                  {RANGE_LABEL[r]}
+                </Pill>
+              ))}
+            </nav>
+            <nav aria-label="Status" className="inline-flex rounded-lg border p-0.5">
+              {TRACE_STATUS_FILTERS.map((s) => (
+                <Pill key={s} href={href({ status: s, cursor: null })} active={s === status}>
+                  {STATUS_LABEL[s]}
+                </Pill>
+              ))}
+            </nav>
+          </div>
+        )}
       </div>
 
       {truncated ? (
@@ -103,7 +113,7 @@ export function TracesView({ items, range, status, hasCursor, nextCursor, trunca
         </>
       )}
 
-      {!empty || hasCursor ? (
+      {!demo && (!empty || hasCursor) ? (
         <nav aria-label="Pages" className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">{empty ? "" : `${formatInt(rows.length)} traces on this page`}</p>
           <div className="flex gap-2">
@@ -208,7 +218,7 @@ function RootName({ row, href, stretch }: { row: TraceRowView; href: string; str
       aria-label={`Open trace ${row.rootLabel}, ${row.traceId}`}
       className={cn(
         "block min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-        stretch && "after:absolute after:inset-0 after:content-['']",
+        stretch && "min-h-11 after:absolute after:inset-0 after:content-['']",
       )}
     >
       <span className={cn("block truncate font-medium underline-offset-4 hover:underline", row.orphan && "italic text-muted-foreground")} title={row.rootTitle}>
