@@ -255,3 +255,22 @@ export async function listTraces(ctx: SessionCtx, projectIdRaw: string, opts: Tr
     window,
   };
 }
+
+/**
+ * `listTraces` for a cursor that comes straight from a URL: when the cursor is not one this module issued, the FIRST page is
+ * returned instead of an error (a hand-edited link must never produce an error page). `usedCursor` says which one the caller
+ * got. Every other failure propagates unchanged. The bad cursor is rejected before any database call, so the fallback costs
+ * one transaction, not two.
+ */
+export async function listTracesTolerant(
+  ctx: SessionCtx,
+  projectIdRaw: string,
+  opts: TraceListOptions,
+): Promise<{ result: TraceListResult; usedCursor: boolean }> {
+  try {
+    return { result: await listTraces(ctx, projectIdRaw, opts), usedCursor: opts.cursor !== undefined };
+  } catch (e) {
+    if (e instanceof InvalidCursorError) return { result: await listTraces(ctx, projectIdRaw, { ...opts, cursor: undefined }), usedCursor: false };
+    throw e;
+  }
+}

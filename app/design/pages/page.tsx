@@ -4,6 +4,8 @@ import { PageShell } from "@/components/dashboard/page-shell";
 import { ConnectionError } from "@/components/connection-error";
 import { OverviewView } from "@/components/dashboard/overview-view";
 import { ProjectFrame } from "@/components/dashboard/project-frame";
+import { TracesView } from "@/components/dashboard/traces-view";
+import type { TraceListItem } from "@/lib/repo/traces";
 import ProjectNotFound from "@/app/dashboard/projects/[id]/not-found";
 import { buildOverview } from "@/lib/dashboard/overview";
 import { getDemoOverview } from "@/lib/demo";
@@ -23,6 +25,18 @@ const PROJECTS = [
 ];
 
 const FIXTURE_NOW = Date.UTC(2026, 10, 21, 12, 30, 0);
+
+const TRACE_FIXTURES: TraceListItem[] = [
+  { traceId: "9f2c41d8e0a74b6c8d3e5f7a1b2c3d4e", startedAtMs: FIXTURE_NOW - 40_000, durationMs: 4_820, spanCount: 7, errorCount: 0, totalTokens: 12_450, costMicro: 18_200, costLowerBound: false, unpricedEvents: 0, rootName: "agent.run", hasRoot: true },
+  { traceId: "a1b2c3d4e5f60718293a4b5c6d7e8f90", startedAtMs: FIXTURE_NOW - 95_000, durationMs: 31_400, spanCount: 12, errorCount: 2, totalTokens: 48_900, costMicro: 91_500, costLowerBound: false, unpricedEvents: 0, rootName: "agent.run", hasRoot: true },
+  { traceId: "b7c8d9e0f1a2b3c4d5e6f708192a3b4c", startedAtMs: FIXTURE_NOW - 180_000, durationMs: 1_150, spanCount: 3, errorCount: 1, totalTokens: 2_300, costMicro: 3_100, costLowerBound: true, unpricedEvents: 1, rootName: "support.answer", hasRoot: true },
+  { traceId: "c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5", startedAtMs: FIXTURE_NOW - 260_000, durationMs: 2_400, spanCount: 4, errorCount: 0, totalTokens: 3_100, costMicro: null, costLowerBound: true, unpricedEvents: 2, rootName: "summarize", hasRoot: true },
+  { traceId: "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f809", startedAtMs: FIXTURE_NOW - 330_000, durationMs: 640, spanCount: 2, errorCount: 0, totalTokens: 800, costMicro: 0, costLowerBound: false, unpricedEvents: 0, rootName: "free-model call", hasRoot: true },
+  { traceId: "e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3", startedAtMs: FIXTURE_NOW - 420_000, durationMs: 5_900, spanCount: 3, errorCount: 0, totalTokens: 5_200, costMicro: 7_400, costLowerBound: false, unpricedEvents: 0, rootName: null, hasRoot: false },
+  { traceId: "f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5", startedAtMs: FIXTURE_NOW - 500_000, durationMs: 90, spanCount: 1, errorCount: 0, totalTokens: 0, costMicro: 0, costLowerBound: false, unpricedEvents: 0, rootName: null, hasRoot: true },
+  { traceId: "0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d", startedAtMs: FIXTURE_NOW - 3_600_000, durationMs: 125_000, spanCount: 9, errorCount: 0, totalTokens: 220_000, costMicro: 1_240_000, costLowerBound: false, unpricedEvents: 0, rootName: "A very long root span name that has to be cut off instead of pushing the other columns out of the screen", hasRoot: true },
+  { traceId: "tr-" + "x".repeat(100), startedAtMs: FIXTURE_NOW - 7_200_000, durationMs: 700, spanCount: 2, errorCount: 0, totalTokens: 1_000, costMicro: 1_500, costLowerBound: false, unpricedEvents: 0, rootName: "agent.run", hasRoot: true },
+];
 
 const KEYS = [
   { id: "k1", name: "production", prefix: "lm_live_a1b2c3", scopes: ["ingest"], lastUsedAt: "2026-11-20T08:00:00Z", revokedAt: null, createdAt: "2026-11-03T09:00:00Z" },
@@ -90,6 +104,30 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
       return (
         <ProjectFrame project={PROJECTS[0]}>
           <OverviewView data={buildOverview({ range: "24h", nowMs: FIXTURE_NOW, rows, pricedModels: new Set(), eventsToday: 15, eventsLimit: QUOTAS.eventsPerDayPerProject })} basePath="/design/pages" keysHref="/design/pages?view=keys" />
+        </ProjectFrame>
+      );
+    }
+    case "traces":
+    case "traces-older":
+    case "traces-partial":
+    case "traces-errors":
+    case "traces-empty":
+    case "traces-errors-empty":
+    case "traces-7d-empty": {
+      const items = view === "traces-empty" || view === "traces-errors-empty" || view === "traces-7d-empty" ? [] : view === "traces-errors" ? TRACE_FIXTURES.filter((t) => t.errorCount > 0) : TRACE_FIXTURES;
+      return (
+        <ProjectFrame project={PROJECTS[0]}>
+          <TracesView
+            items={items}
+            range={view === "traces-7d-empty" ? "7d" : "24h"}
+            status={view === "traces-errors" || view === "traces-errors-empty" ? "errors" : "all"}
+            hasCursor={view === "traces-older"}
+            nextCursor={view === "traces-older" || view === "traces-errors" || items.length === 0 ? null : "ZmFrZS1jdXJzb3I"}
+            truncated={view === "traces-partial"}
+            basePath="/design/pages"
+            keysHref="/design/pages?view=keys"
+            extraParams={{ view }}
+          />
         </ProjectFrame>
       );
     }

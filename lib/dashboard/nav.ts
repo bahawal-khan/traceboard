@@ -6,5 +6,6 @@ import type { NavItem } from "@/components/dashboard/project-nav";
  */
 export const PROJECT_NAV_ITEMS: readonly NavItem[] = [
   { segment: "", label: "Overview" },
+  { segment: "traces", label: "Traces" },
   { segment: "keys", label: "API keys" },
 ];

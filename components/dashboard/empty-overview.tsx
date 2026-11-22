@@ -5,7 +5,7 @@ import type { OverviewRange } from "@/lib/dashboard/types";
 import { formatInt } from "@/lib/format";
 import { QUOTAS } from "@/lib/quotas";
 
-const RANGE_TEXT: Record<OverviewRange, string> = { "24h": "the last 24 hours", "7d": "the last 7 days" };
+const RANGE_TEXT: Record<OverviewRange | "14d", string> = { "24h": "the last 24 hours", "7d": "the last 7 days", "14d": "the last 14 days" };
 
 // Quoted from README.md / sdk/python/README.md. Placeholders only: nothing here is a real key or address.
 const ENV_SNIPPET = `export LLM_MONITOR_API_KEY=lm_...
@@ -31,11 +31,22 @@ function Code({ children, label }: { children: string; label: string }) {
  * Shown instead of charts when the selected window has no events at all: zero-filled charts would look like data.
  * `keysHref` is the project's API keys page (absent in the demo, which is never empty).
  */
-export function EmptyOverview({ range, basePath, keysHref }: { range: OverviewRange; basePath: string; keysHref?: string }) {
+export function EmptyOverview({
+  range,
+  basePath,
+  keysHref,
+  noun = "events",
+}: {
+  range: OverviewRange | "14d";
+  basePath: string;
+  keysHref?: string;
+  /** What is missing: "events" (Overview) or "traces" (Traces list). */
+  noun?: "events" | "traces";
+}) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>No events in {RANGE_TEXT[range]}</CardTitle>
+        <CardTitle>No {noun} in {RANGE_TEXT[range]}</CardTitle>
         <CardDescription>
           Send your first trace and it appears here. Setup takes about two minutes, and the free plan accepts up to{" "}
           {formatInt(QUOTAS.eventsPerDayPerProject)} events per day.

@@ -21,7 +21,7 @@ vi.mock("@/lib/db/client", () => ({
 
 import { InvalidCursorError, NotFoundError } from "@/lib/repo/errors";
 import { issueCtx, type SessionCtx } from "@/lib/repo/tenant";
-import { TRACE_LIMITS, decodeCursor, encodeCursor, listTraces } from "@/lib/repo/traces";
+import { TRACE_LIMITS, decodeCursor, encodeCursor, listTraces, listTracesTolerant } from "@/lib/repo/traces";
 
 const HOUR = 3_600_000;
 const PID = "11111111-1111-4111-8111-111111111111";
@@ -281,5 +281,37 @@ describe("not found", () => {
   it("a bad status filter is refused before any database call", async () => {
     await expect(listTraces(ctx, PID, { range, status: "weird" as never, nowMs: NOW })).rejects.toThrow();
     expect(m.transactions).toHaveLength(0);
+  });
+});
+
+describe("listTracesTolerant (a cursor straight from a URL)", () => {
+  const good = encodeCursor({ start: "2026-11-21T12:29:59.123456Z", traceId: "tr-1" });
+  it("a valid cursor is used", async () => {
+    m.results = [projectRow, [emptyPage]];
+    const r = await listTracesTolerant(ctx, PID, { range, nowMs: NOW, cursor: good });
+    expect(r.usedCursor).toBe(true);
+    expect(m.transactions).toHaveLength(1);
+    expect(m.transactions[0]![2]!.values).toContain("tr-1");
+  });
+  it("no cursor: first page, usedCursor false", async () => {
+    m.results = [projectRow, [emptyPage]];
+    expect((await listTracesTolerant(ctx, PID, { range, nowMs: NOW })).usedCursor).toBe(false);
+  });
+  it("a forged cursor gives the FIRST page (no cursor parameter), with ONE database call and no error", async () => {
+    m.results = [projectRow, [row()]];
+    for (const bad of ["garbage", "", "A".repeat(600), Buffer.from("{}").toString("base64url")]) {
+      m.transactions = [];
+      const r = await listTracesTolerant(ctx, PID, { range, nowMs: NOW, cursor: bad });
+      expect(r.usedCursor).toBe(false);
+      expect(r.result.items).toHaveLength(1);
+      expect(m.transactions).toHaveLength(1);
+      expect(m.transactions[0]![2]!.values.slice(5, 8)).toEqual([null, null, null]);
+    }
+  });
+  it("every other failure propagates: not found, a bad project id, a bad status", async () => {
+    m.results = [[], [emptyPage]];
+    await expect(listTracesTolerant(ctx, PID, { range, nowMs: NOW, cursor: good })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(listTracesTolerant(ctx, "nope", { range, nowMs: NOW, cursor: "garbage" })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(listTracesTolerant(ctx, PID, { range, nowMs: NOW, status: "x" as never })).rejects.toThrow();
   });
 });

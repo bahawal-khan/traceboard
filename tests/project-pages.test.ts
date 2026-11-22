@@ -15,13 +15,14 @@ import nextConfig from "@/next.config";
 const PROJECT_DIR = "app/dashboard/projects/[id]";
 const read = (f: string) => readFileSync(f, "utf8");
 
-const PAGES = [`${PROJECT_DIR}/page.tsx`, `${PROJECT_DIR}/keys/page.tsx`];
+const PAGES = [`${PROJECT_DIR}/page.tsx`, `${PROJECT_DIR}/keys/page.tsx`, `${PROJECT_DIR}/traces/page.tsx`];
 const PROJECT_FILES = [
   ...PAGES,
   `${PROJECT_DIR}/not-found.tsx`,
   "components/dashboard/project-frame.tsx",
   "components/dashboard/empty-overview.tsx",
   "components/dashboard/overview-view.tsx",
+  "components/dashboard/traces-view.tsx",
 ];
 
 describe("the project pages reach data only through lib/repo", () => {
@@ -42,10 +43,10 @@ describe("the project pages reach data only through lib/repo", () => {
     });
   }
 
-  it("only repo modules that exist for the dashboard are imported (ctx, errors, projects, api-keys, metrics)", () => {
+  it("only repo modules that exist for the dashboard are imported (ctx, errors, projects, api-keys, metrics, traces)", () => {
     for (const f of PROJECT_FILES) {
       for (const m of read(f).matchAll(/from ["']@\/lib\/repo\/([\w-]+)["']/g)) {
-        expect(["ctx", "errors", "projects", "api-keys", "metrics"], `${f} imports lib/repo/${m[1]}`).toContain(m[1]);
+        expect(["ctx", "errors", "projects", "api-keys", "metrics", "traces"], `${f} imports lib/repo/${m[1]}`).toContain(m[1]);
       }
     }
   });
@@ -95,7 +96,7 @@ describe("the project pages are per-user and never cached", () => {
     expect(PAGES.every((f) => f.startsWith("app/dashboard/"))).toBe(true);
     expect(read("proxy.ts")).toContain('createRouteMatcher(["/dashboard(.*)"])');
     // ... and the bypass lists (API-key and cron routes skip Clerk) do not match any project page path
-    for (const path of ["/dashboard/projects/abc", "/dashboard/projects/abc/keys", "/dashboard/projects/abc?range=7d"]) {
+    for (const path of ["/dashboard/projects/abc", "/dashboard/projects/abc/keys", "/dashboard/projects/abc/traces", "/dashboard/projects/abc/traces?range=7d&cursor=x", "/dashboard/projects/abc?range=7d"]) {
       expect(isApiKeyRoute(path), path).toBe(false);
       expect(isCronRoute(path), path).toBe(false);
     }
@@ -159,7 +160,7 @@ describe("navigation", () => {
     expect(src).toContain("href={`/dashboard/projects/${p.id}`}");
     expect(src).toContain("href={`/dashboard/projects/${p.id}/keys`}");
   });
-  it("both pages wear the shared frame (heading, 'All projects' link, tabs)", () => {
+  it("every page wears the shared frame (heading, 'All projects' link, tabs)", () => {
     for (const f of PAGES) expect(read(f), f).toContain("<ProjectFrame project={project}>");
     const frame = read("components/dashboard/project-frame.tsx");
     expect(frame).toContain('href="/dashboard"');
