@@ -23,3 +23,14 @@ export class LimitReachedError extends Error {
     this.name = "LimitReachedError";
   }
 }
+
+/**
+ * A pagination cursor that is not one this server issued (malformed, truncated, edited). Carries no detail on purpose:
+ * routes answer a generic 400 and pages fall back to the first page. Never contains database text.
+ */
+export class InvalidCursorError extends Error {
+  constructor() {
+    super("invalid cursor");
+    this.name = "InvalidCursorError";
+  }
+}

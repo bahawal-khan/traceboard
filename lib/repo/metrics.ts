@@ -2,9 +2,9 @@ import { buildOverview, overviewWindow } from "@/lib/dashboard/overview";
 import { overviewRangeSchema, rollupRowSchema, type OverviewData, type OverviewRange, type RollupRow } from "@/lib/dashboard/types";
 import { PriceBook } from "@/lib/ingest/cost";
 import { QUOTAS, RETENTION } from "@/lib/quotas";
-import { projectId } from "@/lib/validation/projects";
 import { NotFoundError } from "./errors";
 import { loadModelPrices } from "./prices";
+import { assertInContext, parseProjectId, projectSelect } from "./project-guard";
 import { withTenant, type SessionCtx, type Tx } from "./tenant";
 
 /**
@@ -100,11 +100,6 @@ function minuteSelect(t: Tx, pid: string, fromIso: string, toIso: string, limit:
    limit ${limit}::int`;
 }
 
-/** The project row, visible only to its owner (RLS plus the explicit owner filter, like getProject). */
-function projectSelect(t: Tx, ctx: SessionCtx, pid: string) {
-  return t`select id from projects where id = ${pid}::uuid and owner_id = ${ctx.ownerId}`;
-}
-
 const LAT_KEYS = ["lat_b0", "lat_b1", "lat_b2", "lat_b3", "lat_b4", "lat_b5", "lat_b6", "lat_b7", "lat_b8", "lat_b9", "lat_b10", "lat_b11"] as const;
 
 /**
@@ -146,18 +141,6 @@ function finishRows(raw: readonly Record<string, unknown>[]): { rows: RollupRow[
   const truncated = raw.length > METRICS_LIMITS.maxRows;
   const kept = truncated ? raw.slice(0, METRICS_LIMITS.maxRows) : raw;
   return { rows: kept.map(toRollupRow).sort(compareRollupRows), truncated };
-}
-
-/** A malformed id is "not found", exactly like a missing or foreign one. */
-function parseProjectId(id: string): string {
-  const parsed = projectId.safeParse(id);
-  if (!parsed.success) throw new NotFoundError();
-  return parsed.data;
-}
-
-/** Cheap pre-check, no database: a project outside the context's own list can never be read. Same error as a missing one. */
-function assertInContext(ctx: SessionCtx, pid: string): void {
-  if (!ctx.projectIds.includes(pid)) throw new NotFoundError();
 }
 
 export interface RollupRead {

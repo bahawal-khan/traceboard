@@ -26,5 +26,8 @@
   ],
   "metrics": [
     "metrics"
+  ],
+  "traces": [
+    "traces"
   ]
 }
