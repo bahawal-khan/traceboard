@@ -27,6 +27,9 @@
   "metrics": [
     "metrics"
   ],
+  "threads": [
+    "threads"
+  ],
   "traces": [
     "traces",
     "trace-detail"
