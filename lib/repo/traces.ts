@@ -194,7 +194,8 @@ export function traceListStatement(
      order by p.start_at desc nulls last, p.trace_id desc`;
 }
 
-function toItem(r: Record<string, unknown>): TraceListItem {
+/** One aggregated trace row (columns of the list statement) to a validated item. Shared with the thread detail reader. */
+export function toItem(r: Record<string, unknown>): TraceListItem {
   const unpriced = Number(r.unpriced);
   const costMicro = r.cost_micro === null || r.cost_micro === undefined ? null : Number(r.cost_micro);
   return traceListItemSchema.parse({

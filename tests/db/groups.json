@@ -28,7 +28,8 @@
     "metrics"
   ],
   "threads": [
-    "threads"
+    "threads",
+    "thread-detail"
   ],
   "traces": [
     "traces",
