@@ -246,12 +246,13 @@ function TraceTable({ rows, rowHref }: { rows: TraceRowView[]; rowHref: (traceId
         <TableCaption className="sr-only">Traces, newest first</TableCaption>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-24">Started (UTC)</TableHead>
+            {/* Column widths fit the header text (measured at 1280 px: "Started (UTC)" is 88 px) plus room; headers do not wrap. */}
+            <TableHead className="w-32">Started (UTC)</TableHead>
             <TableHead>Trace</TableHead>
             <TableHead className="w-20 text-right">Duration</TableHead>
-            <TableHead className="w-14 text-right">Spans</TableHead>
+            <TableHead className="w-20 text-right">Spans</TableHead>
             <TableHead className="w-24">Status</TableHead>
-            <TableHead className="w-16 text-right">Tokens</TableHead>
+            <TableHead className="w-20 text-right">Tokens</TableHead>
             <TableHead className="w-24 text-right">Cost</TableHead>
           </TableRow>
         </TableHeader>

@@ -130,6 +130,14 @@ describe("TracesView HTML", () => {
     for (const h of details) expect(h).toMatch(/^\/dashboard\/projects\/p1\/traces\/[A-Za-z0-9._~%-]+$/);
   });
 
+  it("header columns are wide enough for their text (measured in a browser: 'Started (UTC)' needs 88 px of content, 'Spans' 41 px), so no header runs into the next", () => {
+    const widthOf = (label: string) => {
+      const m = new RegExp(`<th[^>]*class="[^"]*\\bw-(\\d+)\\b[^"]*"[^>]*>${label}</th>`).exec(html);
+      return m ? Number(m[1]) * 4 : null; // Tailwind w-N = N x 4 px
+    };
+    const MIN_PX = { "Started \\(UTC\\)": 112, Spans: 72, Tokens: 72 }; // text + 8 px padding each side + room
+    for (const [label, min] of Object.entries(MIN_PX)) expect(widthOf(label), label).toBeGreaterThanOrEqual(min);
+  });
   it("tap targets are 44 px on small screens and nothing forces a wide layout", () => {
     expect(html).toContain("min-h-11");
     expect(html).not.toMatch(/min-w-\[|w-\[\d{3,}px\]/);
@@ -202,8 +210,8 @@ describe("static checks", () => {
   const page = read("app/dashboard/projects/[id]/traces/page.tsx");
   const sources = ["components/dashboard/traces-view.tsx", "lib/dashboard/traces-view.ts", "app/dashboard/projects/[id]/traces/page.tsx"];
 
-  it("the Traces tab sits between Overview and API keys, and its page exists", () => {
-    expect(PROJECT_NAV_ITEMS.map((i) => i.segment)).toEqual(["", "traces", "keys"]);
+  it("the Traces tab sits right after Overview (Threads follows it), and its page exists", () => {
+    expect(PROJECT_NAV_ITEMS.map((i) => i.segment)).toEqual(["", "traces", "threads", "keys"]);
     expect(PROJECT_NAV_ITEMS[1]).toEqual({ segment: "traces", label: "Traces" });
   });
   it("the page gets data only from getProject and listTracesTolerant with a session context, validates every parameter, and shares one not-found page", () => {

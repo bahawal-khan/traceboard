@@ -5,7 +5,9 @@ import { ConnectionError } from "@/components/connection-error";
 import { OverviewView } from "@/components/dashboard/overview-view";
 import { ProjectFrame } from "@/components/dashboard/project-frame";
 import { TraceDetailPageView } from "@/components/dashboard/trace-detail-page-view";
+import { ThreadsView } from "@/components/dashboard/threads-view";
 import { TracesView } from "@/components/dashboard/traces-view";
+import { HOSTILE_THREAD_FIXTURES, THREAD_FIXTURES } from "@/lib/dashboard/thread-fixtures";
 import { buildTraceDetailView } from "@/lib/dashboard/trace-detail-view";
 import { TRACE_FIXTURE_NAMES, traceFixture } from "@/lib/dashboard/trace-fixtures";
 import type { TraceListItem } from "@/lib/repo/traces";
@@ -49,7 +51,7 @@ const KEYS = [
 
 /**
  * Development-only: renders the REAL Phase 1 components with fixture data, because the signed-in pages cannot be opened
- * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
+ * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|threads|threads-older|threads-partial|threads-empty|threads-7d-empty|threads-hostile|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
  * A production build answers 404.
  */
 export default async function PagesFixtures({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
@@ -130,6 +132,29 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
             basePath="/design/pages"
             keysHref="/design/pages?view=keys"
             rowHref={() => "/design/pages?view=trace-ok"}
+            extraParams={{ view }}
+          />
+        </ProjectFrame>
+      );
+    }
+    case "threads":
+    case "threads-older":
+    case "threads-partial":
+    case "threads-empty":
+    case "threads-7d-empty":
+    case "threads-hostile": {
+      const items = view === "threads-empty" || view === "threads-7d-empty" ? [] : view === "threads-hostile" ? HOSTILE_THREAD_FIXTURES : THREAD_FIXTURES;
+      return (
+        <ProjectFrame project={PROJECTS[0]}>
+          <ThreadsView
+            items={items}
+            range={view === "threads-7d-empty" ? "7d" : "24h"}
+            hasCursor={view === "threads-older"}
+            nextCursor={view === "threads-older" || items.length === 0 ? null : "ZmFrZS1jdXJzb3I"}
+            truncated={view === "threads-partial"}
+            basePath="/design/pages"
+            tracesHref="/design/pages?view=traces"
+            rowHref={() => `/design/pages?view=${view}`}
             extraParams={{ view }}
           />
         </ProjectFrame>
