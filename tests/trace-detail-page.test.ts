@@ -176,8 +176,10 @@ describe("static checks of the sources", () => {
     "lib/dashboard/trace-fixtures.ts",
   ];
   it("the page validates the trace id before the session, then reads through getTrace and getProject only", () => {
-    expect(page.indexOf("parseTraceIdParam(rawTraceId)")).toBeGreaterThan(-1);
-    expect(page.indexOf("parseTraceIdParam(rawTraceId)")).toBeLessThan(page.indexOf("ctxFromSession()"));
+    // the segment arrives percent-encoded: it is decoded once and validated (decodeRouteIdParam does both) before the session
+    expect(page.indexOf("decodeRouteIdParam(rawTraceId)")).toBeGreaterThan(-1);
+    expect(page.indexOf("decodeRouteIdParam(rawTraceId)")).toBeLessThan(page.indexOf("ctxFromSession()"));
+    expect(page).not.toMatch(/getTrace\(ctx, id, rawTraceId\)/); // never the undecoded segment
     expect(page).toMatch(/if \(traceId === null\) notFound\(\);/);
     expect(page).toContain("getTrace(ctx, id, traceId)");
     expect(page).toContain("getProject(ctx, id)");

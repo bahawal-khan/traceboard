@@ -14,7 +14,9 @@ export function generateStaticParams() {
 
 /**
  * One demo trace, through the same view as the signed-in page (summary, notices, waterfall, table, span panel). The id is
- * only looked up in the committed sample; an unknown or malformed id gets the plain not-found page.
+ * only looked up in the committed sample; an unknown or malformed id gets the plain not-found page. The sample's ids are
+ * all URL-safe (letters, digits, underscore), so the percent-encoded segment Next passes equals the id and needs no
+ * decoding here; tests/route-id.test.ts fails if a snapshot id ever changes under encodeURIComponent.
  */
 export default async function DemoTracePage({ params }: { params: Promise<{ traceId: string }> }) {
   const { traceId } = await params;

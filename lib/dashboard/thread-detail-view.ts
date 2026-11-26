@@ -1,4 +1,5 @@
 import { UNKNOWN, UNKNOWN_COST_TITLE, formatCostMicro, formatDuration, formatInt, formatTokens, formatUtcSeconds } from "@/lib/format";
+import { decodeRouteIdParam } from "@/lib/dashboard/route-id";
 import { traceDetailHref } from "@/lib/dashboard/trace-detail-view";
 import { displayThreadId, threadIdLabel } from "@/lib/dashboard/threads-view";
 import type { TraceItemInput } from "@/lib/dashboard/traces-view";
@@ -12,24 +13,13 @@ import type { TraceItemInput } from "@/lib/dashboard/traces-view";
 /** A turn as getThread returns it (the trace list's summary of one trace, counting only this thread's events). */
 export type TurnInput = TraceItemInput;
 
-const NO_CONTROL = /^[^\u0000-\u001f\u007f]*$/;
-
 /**
- * The thread id from the URL. Next.js hands a page the segment PERCENT-ENCODED (checked in next 16.4.6:
- * shared/lib/router/utils/get-dynamic-param.js re-encodes it with encodeURIComponent), and `threadDetailHref` encodes with the
- * same function, so one decodeURIComponent restores the id exactly. A malformed escape, an empty id, more than 128
- * characters, or a control character gives null (the page then shows the one not-found page; no database call is made).
- * Same rule as ingest and `getThread`.
+ * The thread id from the URL: decoded once and validated by the shared route-id rule (lib/dashboard/route-id.ts, which says
+ * why one decode is right). A malformed escape, an empty id, more than 128 characters, or a control character gives null
+ * (the page then shows the one not-found page; no database call is made). Same rule as ingest and `getThread`.
  */
 export function parseThreadIdParam(raw: string | string[] | undefined): string | null {
-  if (typeof raw !== "string" || raw.length === 0 || raw.length > 128 * 12) return null; // a 128-character id encodes to at most 12 x 128
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(raw);
-  } catch {
-    return null;
-  }
-  return decoded.length >= 1 && decoded.length <= 128 && NO_CONTROL.test(decoded) ? decoded : null;
+  return decodeRouteIdParam(raw);
 }
 
 export type ThreadNoticeId = "truncated" | "untraced" | "no-traces" | "scope";

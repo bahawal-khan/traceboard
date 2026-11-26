@@ -1,3 +1,4 @@
+import { isValidIdText } from "@/lib/dashboard/route-id";
 import { UNKNOWN, UNKNOWN_COST_TITLE, formatCostMicro, formatDuration, formatInt, formatTokens, formatUtcSeconds } from "@/lib/format";
 import { traceCostView } from "@/lib/dashboard/traces-view";
 import { MAX_TREE_DEPTH, buildTraceTree, type SpanInput, type TraceTree } from "@/lib/dashboard/trace-tree";
@@ -8,11 +9,13 @@ import { MAX_TREE_DEPTH, buildTraceTree, type SpanInput, type TraceTree } from "
  * lib/repo returned (spans are metadata only). Shared with the dev fixtures, so it never imports lib/repo.
  */
 
-/** Same rule as `traceIdSchema` in lib/repo/trace-detail (1 to 128 characters, no control characters); a test keeps the two equal. */
+/**
+ * Validates a trace id AS IT IS (already decoded): same rule as `traceIdSchema` in lib/repo/trace-detail (1 to 128
+ * characters, no control characters); a test keeps the two equal. It does NOT decode. A route segment must go through
+ * `decodeRouteIdParam` (lib/dashboard/route-id.ts) first: Next hands pages the percent-encoded segment.
+ */
 export function parseTraceIdParam(raw: string | string[] | undefined): string | null {
-  if (typeof raw !== "string") return null;
-  if (raw.length < 1 || raw.length > 128) return null;
-  return /^[^\u0000-\u001f\u007f]*$/.test(raw) ? raw : null;
+  return typeof raw === "string" && isValidIdText(raw) ? raw : null;
 }
 
 /** Link to a trace from the list. The id is user data, so it is always encoded. */
