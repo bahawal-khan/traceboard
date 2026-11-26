@@ -1,6 +1,6 @@
 import { costMicro, type ModelPrice } from "@/lib/ingest/cost";
 import { LATENCY_BOUNDS_MS, LATENCY_BUCKETS } from "@/lib/ingest/rollup";
-import type { DemoSnapshot, RollupRow, SpanRow, TraceDetail } from "@/lib/dashboard/types";
+import type { DemoSnapshot, DemoThread, RollupRow, SpanRow, TraceDetail } from "@/lib/dashboard/types";
 
 /**
  * Deterministic synthetic traffic for the public demo project. Pure: the same seed gives byte-identical output, so the
@@ -299,6 +299,35 @@ function toDetail(events: DemoEvent[]): TraceDetail {
 
 const SAMPLE_TRACES = 36;
 
+/** Turns per thread, cycled: a one-turn thread, a long one and in-between ones. */
+const THREAD_SIZES = [3, 1, 4, 2] as const;
+
+/**
+ * Groups the sample traces into threads. Uses NO random numbers (so no existing value of the sample can change): the traces,
+ * oldest first, are cut into consecutive runs of THREAD_SIZES; every fifth trace has no thread at all, and the orphan trace
+ * (its parent never arrived) never has one. Ids are counters ("th_demo_01"), never real session ids.
+ */
+export function assignDemoThreads(traces: readonly TraceDetail[]): DemoThread[] {
+  const oldestFirst = [...traces].filter((t) => t.summary.traceId !== "tr_orph1").sort((a, b) => (a.summary.startedAt < b.summary.startedAt ? -1 : 1));
+  const threads: DemoThread[] = [];
+  let open: string[] = [];
+  let sizeIdx = 0;
+  const close = () => {
+    if (open.length > 0) threads.push({ threadId: `th_demo_${String(threads.length + 1).padStart(2, "0")}`, traceIds: open });
+    open = [];
+  };
+  oldestFirst.forEach((t, i) => {
+    if (i % 5 === 4) return; // a trace with no thread
+    open.push(t.summary.traceId);
+    if (open.length >= THREAD_SIZES[sizeIdx % THREAD_SIZES.length]!) {
+      close();
+      sizeIdx += 1;
+    }
+  });
+  close();
+  return threads;
+}
+
 export function generateDemoSnapshot(): DemoSnapshot {
   const events = generateDemoEvents();
   const byTrace = new Map<string, DemoEvent[]>();
@@ -325,6 +354,7 @@ export function generateDemoSnapshot(): DemoSnapshot {
     usage: { eventsToday: events.filter((e) => e.startMs >= todayStart).length },
     rollups: rollupEvents(events),
     traces,
+    threads: assignDemoThreads(traces),
   };
 }
 
@@ -341,7 +371,8 @@ export function serializeDemoSnapshot(s: DemoSnapshot): string {
     `  "pricedModels": ${JSON.stringify(s.pricedModels)},`,
     `  "usage": ${JSON.stringify(s.usage)},`,
     `  "rollups": [\n${lines(s.rollups)}\n  ],`,
-    `  "traces": [\n${lines(s.traces)}\n  ]`,
+    `  "traces": [\n${lines(s.traces)}\n  ],`,
+    `  "threads": [\n${lines(s.threads)}\n  ]`,
     "}",
     "",
   ].join("\n");

@@ -28,6 +28,11 @@ export interface ThreadsViewProps {
   rowHref: (threadId: string) => string;
   /** Fixed query parameters of the host page (dev fixtures only). */
   extraParams?: Record<string, string>;
+  /**
+   * "demo": the static public demo. Its data is a frozen sample, so there is no range filter and no paging, and the text says
+   * "the demo threads" instead of a time window. Everything else (rows, cost rules, links) is the same code.
+   */
+  variant?: "live" | "demo";
 }
 
 /**
@@ -35,7 +40,8 @@ export interface ThreadsViewProps {
  * structure only: ids, counts, times and cost, never any message text. Thread ids come from the SDK, so they are only ever
  * rendered as text (React escapes them), shortened, with the full id in the tooltip and the link label.
  */
-export function ThreadsView({ items, range, hasCursor, nextCursor, truncated, basePath, tracesHref, rowHref, extraParams }: ThreadsViewProps) {
+export function ThreadsView({ items, range, hasCursor, nextCursor, truncated, basePath, tracesHref, rowHref, extraParams, variant = "live" }: ThreadsViewProps) {
+  const demo = variant === "demo";
   const href = (s: { range?: TraceRange; cursor?: string | null }) => buildThreadsHref(basePath, { range: s.range ?? range, cursor: s.cursor }, extraParams);
   const rows = items.map(toThreadRowView);
   const empty = rows.length === 0;
@@ -45,15 +51,19 @@ export function ThreadsView({ items, range, hasCursor, nextCursor, truncated, ba
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Threads</h2>
-          <p className="text-sm text-muted-foreground">Most recently active first, times in UTC. Showing {RANGE_TEXT[range]}.</p>
+          <p className="text-sm text-muted-foreground">
+            {demo ? "The conversations of the demo project, most recently active first, times in UTC." : `Most recently active first, times in UTC. Showing ${RANGE_TEXT[range]}.`}
+          </p>
         </div>
-        <nav aria-label="Time range" className="inline-flex rounded-lg border p-0.5">
-          {TRACE_RANGES.map((r) => (
-            <Pill key={r} href={href({ range: r, cursor: null })} active={r === range}>
-              {RANGE_LABEL[r]}
-            </Pill>
-          ))}
-        </nav>
+        {demo ? null : (
+          <nav aria-label="Time range" className="inline-flex rounded-lg border p-0.5">
+            {TRACE_RANGES.map((r) => (
+              <Pill key={r} href={href({ range: r, cursor: null })} active={r === range}>
+                {RANGE_LABEL[r]}
+              </Pill>
+            ))}
+          </nav>
+        )}
       </div>
 
       {truncated ? (
@@ -84,7 +94,7 @@ export function ThreadsView({ items, range, hasCursor, nextCursor, truncated, ba
         </>
       )}
 
-      {!empty || hasCursor ? (
+      {!demo && (!empty || hasCursor) ? (
         <nav aria-label="Pages" className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">{empty ? "" : `${formatInt(rows.length)} threads on this page`}</p>
           <div className="flex gap-2">

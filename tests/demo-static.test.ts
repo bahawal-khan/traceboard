@@ -21,7 +21,7 @@ function walk(dir: string): string[] {
 // The views are shared with the signed-in pages, so every component the demo renders is listed here.
 const DEMO_COMPONENTS = [
   "overview-view", "quota-meter", "demo-header", "demo-nav", "demo-shell", "traces-view", "trace-detail-page-view", "trace-explorer", "trace-waterfall",
-  "copy-button", "empty-overview",
+  "copy-button", "empty-overview", "threads-view", "thread-detail-view",
 ].map((n) => `components/dashboard/${n}.tsx`);
 const FILES = [...walk("app/demo"), ...walk("lib/demo"), ...walk("lib/dashboard"), ...DEMO_COMPONENTS];
 const FORBIDDEN = [
@@ -35,7 +35,8 @@ describe("the demo and the shared view-model code are static", () => {
     expect(FILES.length).toBeGreaterThanOrEqual(8);
     expect(FILES).toContain("app/demo/page.tsx");
     expect(FILES).toContain("lib/demo/generate.ts");
-    for (const f of ["app/demo/traces/page.tsx", "app/demo/traces/[traceId]/page.tsx", "app/demo/not-found.tsx", "lib/demo/traces.ts", "components/dashboard/traces-view.tsx"]) {
+    for (const f of ["app/demo/traces/page.tsx", "app/demo/traces/[traceId]/page.tsx", "app/demo/not-found.tsx", "lib/demo/traces.ts", "components/dashboard/traces-view.tsx",
+      "app/demo/threads/page.tsx", "app/demo/threads/[threadId]/page.tsx", "lib/demo/threads.ts", "components/dashboard/threads-view.tsx", "components/dashboard/thread-detail-view.tsx"]) {
       expect(FILES, f).toContain(f);
     }
   });
@@ -65,7 +66,7 @@ describe("the demo and the shared view-model code are static", () => {
     const proxy = readFileSync("proxy.ts", "utf8");
     expect(proxy).toContain('createRouteMatcher(["/dashboard(.*)"])');
     const isProtected = createRouteMatcher(["/dashboard(.*)"]);
-    for (const path of ["/demo", "/demo?range=7d", "/demo/traces", "/demo/traces/tr_00001", "/demo/traces/tr_loop1", "/demo/traces/a%2Fb", "/demo/nope"]) {
+    for (const path of ["/demo", "/demo?range=7d", "/demo/traces", "/demo/traces/tr_00001", "/demo/traces/tr_loop1", "/demo/traces/a%2Fb", "/demo/nope", "/demo/threads", "/demo/threads/th_demo_01", "/demo/threads/a%2Fb"]) {
       expect(isProtected(new NextRequest(`http://localhost${path}`)), path).toBe(false);
       expect(isApiKeyRoute(path.split("?")[0]!), path).toBe(false);
       expect(isCronRoute(path.split("?")[0]!), path).toBe(false);

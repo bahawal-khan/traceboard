@@ -141,6 +141,16 @@ export const traceDetailSchema = z.strictObject({
 });
 export type TraceDetail = z.infer<typeof traceDetailSchema>;
 
+/**
+ * A conversation of the demo: the ids of the sample traces that carry one thread id, oldest first. Traces that are in no thread
+ * are simply not listed. Kept beside the traces (not inside them) so the sample's own lines never change.
+ */
+export const demoThreadSchema = z.strictObject({
+  threadId: z.string().min(1).max(64),
+  traceIds: z.array(z.string().min(1).max(64)).min(1).max(50),
+});
+export type DemoThread = z.infer<typeof demoThreadSchema>;
+
 export const demoSnapshotSchema = z.strictObject({
   version: z.literal(1),
   generatedAt: z.iso.datetime(),
@@ -149,5 +159,6 @@ export const demoSnapshotSchema = z.strictObject({
   usage: z.strictObject({ eventsToday: count }),
   rollups: z.array(rollupRowSchema).max(5000),
   traces: z.array(traceDetailSchema).max(200),
+  threads: z.array(demoThreadSchema).max(100),
 });
 export type DemoSnapshot = z.infer<typeof demoSnapshotSchema>;

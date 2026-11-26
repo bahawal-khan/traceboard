@@ -10,8 +10,8 @@ export default function DemoNotFound() {
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center gap-3 px-4 py-16 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">Not found</h1>
         <p className="max-w-md text-muted-foreground">This demo page does not exist.</p>
-        <Link href="/demo/traces" className={buttonVariants({ variant: "outline", className: "h-11 px-4 sm:h-9" })}>
-          Back to the demo traces
+        <Link href="/demo" className={buttonVariants({ variant: "outline", className: "h-11 px-4 sm:h-9" })}>
+          Back to the demo
         </Link>
       </main>
     </div>

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 const ITEMS = [
   { id: "overview", label: "Overview", href: "/demo" },
   { id: "traces", label: "Traces", href: "/demo/traces" },
+  { id: "threads", label: "Threads", href: "/demo/threads" },
 ] as const;
 
 export type DemoTab = (typeof ITEMS)[number]["id"];
