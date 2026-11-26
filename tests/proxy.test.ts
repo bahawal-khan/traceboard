@@ -17,7 +17,7 @@ const req = (path: string, headers: Record<string, string> = {}) => new NextRequ
 describe("isApiKeyRoute", () => {
   it("matches the ingest and OTLP endpoints and their sub-paths only", () => {
     for (const p of ["/api/ingest", "/api/ingest/", "/api/otlp", "/api/otlp/v1/traces", "/api/ingest/anything"]) expect(isApiKeyRoute(p), p).toBe(true);
-    for (const p of ["/api/ingestx", "/api/otlpx/v1", "/api/dashboard/projects", "/api/dashboard/ingest", "/dashboard", "/", "/api", "/api/ingest-old", "/API/ingest", "/x/api/ingest"]) {
+    for (const p of ["/api/ingestx", "/api/otlpx/v1", "/api/dashboard/projects", "/api/dashboard/ingest", "/api/dashboard/projects/11111111-1111-4111-8111-111111111111/live", "/dashboard", "/", "/api", "/api/ingest-old", "/API/ingest", "/x/api/ingest"]) {
       expect(isApiKeyRoute(p), p).toBe(false);
     }
   });
@@ -26,7 +26,7 @@ describe("isApiKeyRoute", () => {
 describe("isCronRoute", () => {
   it("matches /api/jobs and its sub-paths only", () => {
     for (const p of ["/api/jobs", "/api/jobs/", "/api/jobs/daily"]) expect(isCronRoute(p), p).toBe(true);
-    for (const p of ["/api/jobsx", "/api/dashboard/jobs", "/api/ingest", "/jobs/daily", "/API/jobs/daily", "/x/api/jobs/daily", "/api"]) {
+    for (const p of ["/api/jobsx", "/api/dashboard/jobs", "/api/dashboard/projects/11111111-1111-4111-8111-111111111111/live", "/api/ingest", "/jobs/daily", "/API/jobs/daily", "/x/api/jobs/daily", "/api"]) {
       expect(isCronRoute(p), p).toBe(false);
     }
   });
@@ -72,7 +72,7 @@ describe("proxy", () => {
   });
 
   it("sends every other path through Clerk exactly as before", async () => {
-    for (const path of ["/dashboard", "/api/dashboard/projects", "/api/ingestx", "/api/jobsx", "/", "/sign-in"]) {
+    for (const path of ["/dashboard", "/api/dashboard/projects", "/api/dashboard/projects/11111111-1111-4111-8111-111111111111/live?cursor=abc", "/api/ingestx", "/api/jobsx", "/", "/sign-in"]) {
       clerk.handler.mockClear();
       await proxy(req(path), event);
       expect(clerk.handler, path).toHaveBeenCalledTimes(1);
