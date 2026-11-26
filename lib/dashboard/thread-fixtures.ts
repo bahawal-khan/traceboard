@@ -1,3 +1,4 @@
+import type { TurnInput } from "@/lib/dashboard/thread-detail-view";
 import type { ThreadItemInput } from "@/lib/dashboard/threads-view";
 
 /**
@@ -50,3 +51,57 @@ export const HOSTILE_THREAD_IDS = [
 export const HOSTILE_THREAD_FIXTURES: ThreadItemInput[] = HOSTILE_THREAD_IDS.map((threadId, i) =>
   t({ threadId, lastActiveAtMs: NOW - (i + 1) * MIN, startedAtMs: NOW - (i + 30) * MIN, errorCount: i % 4 === 0 ? 1 : 0 }),
 );
+
+// ---- thread DETAIL fixtures (`/design/pages?view=thread-<name>`) ----
+
+export const THREAD_DETAIL_NAMES = ["normal", "partial-cost", "truncated", "untraced", "no-traces", "hostile", "many"] as const;
+export type ThreadDetailName = (typeof THREAD_DETAIL_NAMES)[number];
+
+export interface ThreadDetailFixture {
+  threadId: string;
+  turns: TurnInput[];
+  untracedEvents: number;
+  truncated: boolean;
+}
+
+const turn = (i: number, o: Partial<TurnInput> = {}): TurnInput => ({
+  traceId: `9f2c41d8e0a74b6c8d3e5f7a1b2c${String(i).padStart(4, "0")}`,
+  startedAtMs: NOW - (60 - i * 3) * MIN,
+  durationMs: 4_000 + i * 700,
+  spanCount: 3 + (i % 5),
+  errorCount: 0,
+  totalTokens: 1_200 + i * 310,
+  costMicro: 2_400 + i * 450,
+  costLowerBound: false,
+  rootName: "support.answer",
+  hasRoot: true,
+  ...o,
+});
+
+export function threadDetailFixture(name: ThreadDetailName): ThreadDetailFixture {
+  const base = { threadId: "sess-7f3a9c", untracedEvents: 0, truncated: false };
+  switch (name) {
+    case "normal":
+      return { ...base, turns: [turn(0), turn(1, { errorCount: 2, rootName: "support.answer (retry)" }), turn(2), turn(3, { totalTokens: 0, costMicro: 0, rootName: "tool-only turn" }), turn(4)] };
+    case "partial-cost":
+      return {
+        ...base,
+        threadId: "sess-partial-cost",
+        turns: [turn(0, { costMicro: 3_100, costLowerBound: true }), turn(1, { costMicro: null, costLowerBound: true }), turn(2), turn(3, { costMicro: 0 }), turn(4, { hasRoot: false, rootName: null })],
+      };
+    case "truncated":
+      return { ...base, threadId: "sess-long-running", turns: Array.from({ length: 12 }, (_, i) => turn(i)), truncated: true };
+    case "untraced":
+      return { ...base, threadId: "sess-mixed", turns: [turn(0), turn(1), turn(2)], untracedEvents: 7 };
+    case "no-traces":
+      return { ...base, threadId: "sess-no-trace-ids", turns: [], untracedEvents: 5 };
+    case "hostile":
+      return {
+        ...base,
+        threadId: HOSTILE_THREAD_IDS[0],
+        turns: HOSTILE_THREAD_IDS.map((id, i) => turn(i, { traceId: id, rootName: i % 2 === 0 ? id : null, errorCount: i % 3 === 0 ? 1 : 0 })),
+      };
+    case "many":
+      return { ...base, threadId: "sess-many-turns", turns: Array.from({ length: 200 }, (_, i) => turn(i, { startedAtMs: NOW - (400 - i) * MIN })) };
+  }
+}

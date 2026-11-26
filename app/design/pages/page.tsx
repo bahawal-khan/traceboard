@@ -7,7 +7,9 @@ import { ProjectFrame } from "@/components/dashboard/project-frame";
 import { TraceDetailPageView } from "@/components/dashboard/trace-detail-page-view";
 import { ThreadsView } from "@/components/dashboard/threads-view";
 import { TracesView } from "@/components/dashboard/traces-view";
-import { HOSTILE_THREAD_FIXTURES, THREAD_FIXTURES } from "@/lib/dashboard/thread-fixtures";
+import { ThreadDetailPageView } from "@/components/dashboard/thread-detail-view";
+import { buildThreadDetailView } from "@/lib/dashboard/thread-detail-view";
+import { HOSTILE_THREAD_FIXTURES, THREAD_DETAIL_NAMES, THREAD_FIXTURES, threadDetailFixture } from "@/lib/dashboard/thread-fixtures";
 import { buildTraceDetailView } from "@/lib/dashboard/trace-detail-view";
 import { TRACE_FIXTURE_NAMES, traceFixture } from "@/lib/dashboard/trace-fixtures";
 import type { TraceListItem } from "@/lib/repo/traces";
@@ -51,7 +53,7 @@ const KEYS = [
 
 /**
  * Development-only: renders the REAL Phase 1 components with fixture data, because the signed-in pages cannot be opened
- * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|threads|threads-older|threads-partial|threads-empty|threads-7d-empty|threads-hostile|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
+ * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|threads|threads-older|threads-partial|threads-empty|threads-7d-empty|threads-hostile|thread-<normal|partial-cost|truncated|untraced|no-traces|hostile|many>|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
  * A production build answers 404.
  */
 export default async function PagesFixtures({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
@@ -169,6 +171,19 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
     case "error":
       return <ConnectionError reference="1234567890" />;
     default: {
+      const tm = /^thread-(.+)$/.exec(view);
+      const threadName = THREAD_DETAIL_NAMES.find((n) => n === tm?.[1]);
+      if (threadName) {
+        const fx = threadDetailFixture(threadName);
+        return (
+          <ProjectFrame project={PROJECTS[0]}>
+            <ThreadDetailPageView
+              view={buildThreadDetailView({ ...fx, tracesPath: "/design/pages?view=trace-ok#" })}
+              backHref="/design/pages?view=threads"
+            />
+          </ProjectFrame>
+        );
+      }
       const m = /^trace-(.+)$/.exec(view);
       const name = TRACE_FIXTURE_NAMES.find((n) => n === m?.[1]);
       if (!name) notFound();

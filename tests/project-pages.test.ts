@@ -15,7 +15,7 @@ import nextConfig from "@/next.config";
 const PROJECT_DIR = "app/dashboard/projects/[id]";
 const read = (f: string) => readFileSync(f, "utf8");
 
-const PAGES = [`${PROJECT_DIR}/page.tsx`, `${PROJECT_DIR}/keys/page.tsx`, `${PROJECT_DIR}/traces/page.tsx`, `${PROJECT_DIR}/traces/[traceId]/page.tsx`, `${PROJECT_DIR}/threads/page.tsx`];
+const PAGES = [`${PROJECT_DIR}/page.tsx`, `${PROJECT_DIR}/keys/page.tsx`, `${PROJECT_DIR}/traces/page.tsx`, `${PROJECT_DIR}/traces/[traceId]/page.tsx`, `${PROJECT_DIR}/threads/page.tsx`, `${PROJECT_DIR}/threads/[threadId]/page.tsx`];
 const PROJECT_FILES = [
   ...PAGES,
   `${PROJECT_DIR}/not-found.tsx`,
@@ -47,10 +47,10 @@ describe("the project pages reach data only through lib/repo", () => {
     });
   }
 
-  it("only repo modules that exist for the dashboard are imported (ctx, errors, projects, api-keys, metrics, traces, trace-detail, threads)", () => {
+  it("only repo modules that exist for the dashboard are imported (ctx, errors, projects, api-keys, metrics, traces, trace-detail, threads, thread-detail)", () => {
     for (const f of PROJECT_FILES) {
       for (const m of read(f).matchAll(/from ["']@\/lib\/repo\/([\w-]+)["']/g)) {
-        expect(["ctx", "errors", "projects", "api-keys", "metrics", "traces", "trace-detail", "threads"], `${f} imports lib/repo/${m[1]}`).toContain(m[1]);
+        expect(["ctx", "errors", "projects", "api-keys", "metrics", "traces", "trace-detail", "threads", "thread-detail"], `${f} imports lib/repo/${m[1]}`).toContain(m[1]);
       }
     }
   });
