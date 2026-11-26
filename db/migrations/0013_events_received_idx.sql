@@ -1,0 +1,15 @@
+-- P3.8a: index for the live delta reader (lib/repo/live.ts, GET /api/live).
+--
+-- The reader asks "rows of this project inserted after (received_at, id), oldest first, limit N". Without an index that starts
+-- with (project_id, received_at) Postgres can only use (project_id, occurred_at desc) or the global occurred_at index and has to
+-- fetch and discard every row of the occurred_at window (about 50 hours), on every poll of every open dashboard.
+--
+-- Same pattern as the other events indexes (0005): created ON THE PARTITIONED PARENT, so Postgres creates a matching index on
+-- every existing partition now and on every partition created later (ensure_event_partitions / job_ensure_partitions run
+-- CREATE TABLE ... PARTITION OF, which attaches the parent's indexes automatically). No per-partition statement is needed and
+-- none must be added to those functions.
+--
+-- CONCURRENTLY is not possible here: Postgres does not support CREATE INDEX CONCURRENTLY on a partitioned table, and the
+-- migration runner applies each migration in a transaction. The plain statement takes a SHARE lock on the parent and each
+-- partition (reads continue, writes wait) for the few seconds it takes to index a free-plan sized table.
+CREATE INDEX events_project_received_idx ON events (project_id, received_at, id);

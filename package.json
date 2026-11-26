@@ -26,6 +26,7 @@
     "test:db:metrics": "node scripts/test-db.mjs metrics",
     "test:db:traces": "node scripts/test-db.mjs traces",
     "test:db:threads": "node scripts/test-db.mjs threads",
+    "test:db:live": "node scripts/test-db.mjs live",
     "db:ping": "node scripts/db-ping.mjs",
     "demo:snapshot": "UPDATE_DEMO_SNAPSHOT=1 vitest run --project unit tests/demo-snapshot.test.ts"
   },
