@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- these tests walk decoded protobuf JSON whose shape is exactly what is under test */
 import { describe, expect, it } from "vitest";
+import { HEAVY_FUZZ_TIMEOUT_MS } from "./helpers/timeouts";
 import { decodeTraceRequest, encodeTraceResponse, PROTO_LIMITS } from "@/lib/otlp/proto";
 import { mapOtlpTraces, OTLP_LIMITS } from "@/lib/otlp/map";
 import { otlpTraceRequest } from "@/lib/otlp/schema";
@@ -123,7 +124,7 @@ describe("protobuf and JSON give the same events (differential)", () => {
   });
 });
 
-describe("protobuf decoding: limits", () => {
+describe("protobuf decoding: limits", { timeout: HEAVY_FUZZ_TIMEOUT_MS }, () => {
   it("spans beyond the cap are counted, not decoded", () => {
     const many = Array.from({ length: MAX + 40 }, (_, i) => span({ traceId: TRACE, spanId: (i + 1).toString(16).padStart(16, "0"), name: "s", start: T0 }));
     const r = decode(request(many));
@@ -161,7 +162,7 @@ describe("protobuf decoding: limits", () => {
   });
 });
 
-describe("protobuf decoding: hostile input never throws and never trusts a length", () => {
+describe("protobuf decoding: hostile input never throws and never trusts a length", { timeout: HEAVY_FUZZ_TIMEOUT_MS }, () => {
   const rejects = (bytes: number[]) => {
     const r = decodeTraceRequest(Uint8Array.from(bytes), MAX);
     expect(r.ok).toBe(false);
@@ -221,7 +222,7 @@ describe("protobuf decoding: hostile input never throws and never trusts a lengt
     const r = decodeTraceRequest(bytes, MAX);
     expect(performance.now() - t).toBeLessThan(1000);
     expect(r.ok).toBe(true);
-  }, 60_000);
+  });
 
   it("deeply nested array attribute values are skipped without recursion", () => {
     const v = nested(5, 200_000, str(1, "x")); // array_value inside array_value inside ...
@@ -261,7 +262,7 @@ describe("protobuf decoding: hostile input never throws and never trusts a lengt
       if (r.ok) mapOtlpTraces(otlpTraceRequest.parse(r.request));
     }
     expect(performance.now() - t).toBeLessThan(15_000);
-  }, 30_000);
+  });
 
   it("random STRUCTURED messages (valid wire format, random field numbers and types) never throw", () => {
     let seed = 12345;
@@ -282,7 +283,7 @@ describe("protobuf decoding: hostile input never throws and never trusts a lengt
       const r = decodeTraceRequest(Uint8Array.from(msg(6)), MAX);
       if (r.ok) mapOtlpTraces(otlpTraceRequest.parse(r.request));
     }
-  }, 30_000);
+  });
 });
 
 describe("protobuf response", () => {

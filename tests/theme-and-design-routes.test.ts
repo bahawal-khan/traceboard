@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SLOW_TOOL_TIMEOUT_MS } from "./helpers/timeouts";
 
 const layout = readFileSync("app/layout.tsx", "utf8");
 
@@ -86,7 +87,7 @@ describe("no locale-dependent date rendering in client or page code (hydration d
   });
 });
 
-describe("development-only routes", () => {
+describe("development-only routes", { timeout: SLOW_TOOL_TIMEOUT_MS }, () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("/design answers 404 in production", async () => {

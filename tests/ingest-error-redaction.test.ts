@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LOADED_MACHINE_TIMEOUT_MS } from "./helpers/timeouts";
 import { ERROR_MAX_CHARS, normalizeEvents, sanitizeError } from "@/lib/ingest/normalize";
 import { PriceBook } from "@/lib/ingest/cost";
 import type { IngestEvent } from "@/lib/ingest/validate";
@@ -62,5 +63,5 @@ describe("error text redaction (normalizeEvents)", () => {
       expect(performance.now() - t).toBeLessThan(500);
       expect(out.length).toBeLessThanOrEqual(ERROR_MAX_CHARS);
     }
-  });
+  }, LOADED_MACHINE_TIMEOUT_MS);
 });

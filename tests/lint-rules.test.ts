@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ESLint } from "eslint";
+import { SLOW_TOOL_TIMEOUT_MS } from "./helpers/timeouts";
 
 async function lint(code: string, filePath: string) {
   const eslint = new ESLint({ cwd: process.cwd() });
@@ -7,7 +8,7 @@ async function lint(code: string, filePath: string) {
   return res.messages.filter((m) => m.severity === 2).map((m) => m.ruleId);
 }
 
-describe("architecture lint rules", () => {
+describe("architecture lint rules", { timeout: SLOW_TOOL_TIMEOUT_MS }, () => {
   it("bans importing the db client outside lib/repo", async () => {
     const rules = await lint('import { db } from "@/lib/db/client";\nexport const x = db;\n', "app/bad.ts");
     expect(rules).toContain("no-restricted-imports");
