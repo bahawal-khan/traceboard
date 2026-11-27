@@ -3,6 +3,8 @@ import { CapacityNotice } from "@/components/dashboard/capacity-notice";
 import { PageShell } from "@/components/dashboard/page-shell";
 import { ConnectionError } from "@/components/connection-error";
 import { OverviewView } from "@/components/dashboard/overview-view";
+import { LiveBannerView } from "@/components/dashboard/live-banner-view";
+import type { BannerState } from "@/lib/dashboard/live-banner";
 import { ProjectFrame } from "@/components/dashboard/project-frame";
 import { TraceDetailPageView } from "@/components/dashboard/trace-detail-page-view";
 import { ThreadsView } from "@/components/dashboard/threads-view";
@@ -53,7 +55,7 @@ const KEYS = [
 
 /**
  * Development-only: renders the REAL Phase 1 components with fixture data, because the signed-in pages cannot be opened
- * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|threads|threads-older|threads-partial|threads-empty|threads-7d-empty|threads-hostile|thread-<normal|partial-cost|truncated|untraced|no-traces|hostile|many>|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
+ * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|threads|threads-older|threads-partial|threads-empty|threads-7d-empty|threads-hostile|thread-<normal|partial-cost|truncated|untraced|no-traces|hostile|many>|live-<none|new|one|errors|truncated|long|paused|ended-session|ended-gone>|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
  * A production build answers 404.
  */
 export default async function PagesFixtures({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
@@ -159,6 +161,44 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
             rowHref={() => `/design/pages?view=${view}`}
             extraParams={{ view }}
           />
+        </ProjectFrame>
+      );
+    }
+    case "live-none":
+    case "live-new":
+    case "live-one":
+    case "live-errors":
+    case "live-truncated":
+    case "live-long":
+    case "live-paused":
+    case "live-ended-session":
+    case "live-ended-gone": {
+      // The REAL banner view over a real table, to show it floats above the page and never moves it. Buttons are inert here.
+      const state: BannerState =
+        view === "live-new" ? { kind: "new", events: 12, errors: 0, atLeast: false }
+        : view === "live-one" ? { kind: "new", events: 1, errors: 1, atLeast: false }
+        : view === "live-errors" ? { kind: "new", events: 12, errors: 2, atLeast: false }
+        : view === "live-truncated" ? { kind: "new", events: 1000, errors: 14, atLeast: true }
+        : view === "live-long" ? { kind: "new", events: 987_654, errors: 123_456, atLeast: true }
+        : view === "live-paused" ? { kind: "paused" }
+        : view === "live-ended-session" ? { kind: "ended", reason: "session_ended" }
+        : view === "live-ended-gone" ? { kind: "ended", reason: "not_found" }
+        : { kind: "none" };
+      return (
+        <ProjectFrame project={PROJECTS[0]}>
+          <TracesView
+            items={TRACE_FIXTURES}
+            range="24h"
+            status="all"
+            hasCursor={false}
+            nextCursor={null}
+            truncated={false}
+            basePath="/design/pages"
+            keysHref="/design/pages?view=keys"
+            rowHref={() => "/design/pages?view=trace-ok"}
+            extraParams={{ view }}
+          />
+          <LiveBannerView state={state} />
         </ProjectFrame>
       );
     }
