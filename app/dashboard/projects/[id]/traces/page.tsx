@@ -11,6 +11,7 @@ import {
   repoStatus,
   traceRangeWindow,
 } from "@/lib/dashboard/traces-view";
+import { loadProjectNotices } from "@/lib/notices/load-notices";
 import { ctxFromSession } from "@/lib/repo/ctx";
 import { isNotFoundLike } from "@/lib/repo/errors";
 import { getProject } from "@/lib/repo/projects";
@@ -40,13 +41,14 @@ export default async function ProjectTracesPage({
   if (!ctx) redirect("/sign-in");
 
   const win = traceRangeWindow(range);
-  let project, listed;
+  let project, listed, notices;
   try {
     // Two independent reads in parallel; either proves the project is the caller's. "Not found" of any kind ends in the one
     // not-found page; a database outage is rethrown to app/dashboard/error.tsx (retry, no details).
-    [project, listed] = await Promise.all([
+    [project, listed, notices] = await Promise.all([
       getProject(ctx, id),
       listTracesTolerant(ctx, id, { range: win, status: repoStatus(status), cursor, limit: TRACES_PAGE_SIZE }),
+      loadProjectNotices(ctx, id), // never throws; null = no banner
     ]);
   } catch (e) {
     if (isNotFoundLike(e)) notFound();
@@ -56,7 +58,7 @@ export default async function ProjectTracesPage({
   const { result: page, usedCursor } = listed;
   const base = `/dashboard/projects/${project.id}`;
   return (
-    <ProjectFrame project={project}>
+    <ProjectFrame project={project} notices={notices}>
       <TracesView
         items={page.items}
         range={range}

@@ -33,6 +33,8 @@ from llm_monitor.integrations.anthropic import instrument_anthropic  # noqa: E40
 from llm_monitor.integrations.openai import instrument_openai  # noqa: E402
 
 LOOP_REPEATS = 6
+REQUEST_TIMEOUT_S = 30.0  # per request to the server (SDK default 5 s); the SDK accepts up to 60
+FLUSH_WAIT_S = 40.0  # how long the demo waits for the queue to drain at the end
 
 
 # ---- simulated providers (same shapes as the real SDKs; see the wrappers' docs) -------------------------------------------
@@ -171,14 +173,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.dry_run:
         mon = Monitor("lm_" + "D" * 43, "https://dry-run.invalid", transport=transport)
     else:
-        mon = Monitor()
+        # A generous request timeout (the SDK default is 5 s) so the demo also works on a slow machine or a cold server.
+        mon = Monitor(timeout_s=REQUEST_TIMEOUT_S)
         if not mon.enabled:
             print("LLM Monitor is not configured (%s)." % mon.config_error)
             print("Set LLM_MONITOR_API_KEY and LLM_MONITOR_URL, or try --dry-run.")
             return 2
     set_default_monitor(mon)
     done = run_demo(mon, runs=max(0, args.runs), seed=args.seed, realtime=args.realtime)
-    flushed = mon.flush(10)
+    flushed = mon.flush(FLUSH_WAIT_S)  # must outlast one request, or a slow server would read as "events still queued"
     stats = mon.stats
     print("agent runs: %(normal_runs)d normal, %(failing_runs)d with a failing tool, %(looping_runs)d looping" % done)
     print("events tracked: %d, sent: %s, dropped: %d, rejected: %d" % (stats.get("events_tracked", 0), stats.get("events_sent", "?"), stats.get("events_dropped_queue_full", 0), stats.get("events_rejected", 0)))

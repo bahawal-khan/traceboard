@@ -2,7 +2,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { LiveUpdates } from "@/components/dashboard/live-updates";
 import { PageShell } from "@/components/dashboard/page-shell";
+import { ProjectBanners } from "@/components/dashboard/project-banners";
 import { ProjectNav } from "@/components/dashboard/project-nav";
+import type { ProjectNotices } from "@/lib/dashboard/project-notices";
 import { LIVE_BANNER_RESERVE_CLASS } from "@/lib/dashboard/live-banner";
 import { PROJECT_NAV_ITEMS } from "@/lib/dashboard/nav";
 
@@ -12,7 +14,16 @@ import { PROJECT_NAV_ITEMS } from "@/lib/dashboard/nav";
  * Only the project's id and name are needed here; nothing else about it reaches the client.
  * It also mounts the quiet live-updates notice (a fixed overlay, nothing in the page flow); it skips the API keys page itself.
  */
-export function ProjectFrame({ project, children }: { project: { id: string; name: string }; children: ReactNode }) {
+export function ProjectFrame({
+  project,
+  notices,
+  children,
+}: {
+  project: { id: string; name: string };
+  /** From `loadProjectNotices` (never throws). Null or absent = unknown = no banner. The only place the project banners are mounted. */
+  notices?: ProjectNotices | null;
+  children: ReactNode;
+}) {
   return (
     <PageShell width="wide">
       <Link href="/dashboard" className="inline-flex min-h-11 items-center text-sm text-muted-foreground underline underline-offset-4 sm:min-h-0">
@@ -24,6 +35,7 @@ export function ProjectFrame({ project, children }: { project: { id: string; nam
       <div className="mt-4">
         <ProjectNav projectId={project.id} items={PROJECT_NAV_ITEMS} />
       </div>
+      <ProjectBanners notices={notices} />
       {/* Permanent room for the fixed live banner (shown or not), so the last content scrolls clear of it and nothing shifts. */}
       <div className={`mt-6 ${LIVE_BANNER_RESERVE_CLASS}`}>{children}</div>
       <LiveUpdates projectId={project.id} />

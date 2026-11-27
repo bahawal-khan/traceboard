@@ -159,6 +159,30 @@ class TestCli(unittest.TestCase):
             self.assertNotIn(API_KEY, text)
             self.assertNotIn("lm_", text.replace("LLM_MONITOR", ""))
 
+    def test_a_real_run_uses_a_30_second_request_timeout_and_a_dry_run_does_not_build_a_real_monitor(self):
+        from _helpers import IngestServer
+        seen = {}
+        real = demo.Monitor
+
+        def spy(*a, **kw):
+            seen.setdefault("calls", []).append((a, kw))
+            return real(*a, **kw)
+
+        demo.Monitor = spy
+        try:
+            with IngestServer() as srv:
+                code, _ = self.call(["--runs", "1"], env={"LLM_MONITOR_API_KEY": API_KEY, "LLM_MONITOR_URL": srv.url})
+            self.assertEqual(code, 0)
+            self.assertEqual(seen["calls"][0][1].get("timeout_s"), 30)
+            seen.clear()
+            self.call(["--runs", "1", "--dry-run"])
+            self.assertNotIn("timeout_s", seen["calls"][0][1])  # dry run: the stand-in transport, no network, nothing to time out
+            self.assertEqual(seen["calls"][0][0][1], "https://dry-run.invalid")
+        finally:
+            demo.Monitor = real
+        self.assertEqual(demo.REQUEST_TIMEOUT_S, 30)
+        self.assertGreater(demo.FLUSH_WAIT_S, demo.REQUEST_TIMEOUT_S)
+
     def test_the_last_line_does_not_claim_success_when_the_server_rejected_events(self):
         class Rejecting(object):
             def send(self, events):
@@ -167,7 +191,7 @@ class TestCli(unittest.TestCase):
 
         out = io.StringIO()
         old_main_monitor = demo.Monitor
-        demo.Monitor = lambda: old_main_monitor(API_KEY, "https://example.test", transport=Rejecting())
+        demo.Monitor = lambda **kw: old_main_monitor(API_KEY, "https://example.test", transport=Rejecting())
         try:
             with contextlib.redirect_stdout(out):
                 code = demo.main(["--runs", "1"])

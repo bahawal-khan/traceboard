@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ProjectFrame } from "@/components/dashboard/project-frame";
 import { ThreadDetailPageView } from "@/components/dashboard/thread-detail-view";
 import { buildThreadDetailView, parseThreadIdParam } from "@/lib/dashboard/thread-detail-view";
+import { loadProjectNotices } from "@/lib/notices/load-notices";
 import { ctxFromSession } from "@/lib/repo/ctx";
 import { isNotFoundLike } from "@/lib/repo/errors";
 import { getProject } from "@/lib/repo/projects";
@@ -26,9 +27,9 @@ export default async function ThreadDetailPage({ params }: { params: Promise<{ i
   const ctx = await ctxFromSession();
   if (!ctx) redirect("/sign-in");
 
-  let project, detail;
+  let project, detail, notices;
   try {
-    [project, detail] = await Promise.all([getProject(ctx, id), getThread(ctx, id, threadId)]);
+    [project, detail, notices] = await Promise.all([getProject(ctx, id), getThread(ctx, id, threadId), loadProjectNotices(ctx, id)]);
   } catch (e) {
     if (isNotFoundLike(e)) notFound();
     throw e;
@@ -43,7 +44,7 @@ export default async function ThreadDetailPage({ params }: { params: Promise<{ i
     tracesPath: `${base}/traces`,
   });
   return (
-    <ProjectFrame project={project}>
+    <ProjectFrame project={project} notices={notices}>
       <ThreadDetailPageView view={view} backHref={`${base}/threads`} />
     </ProjectFrame>
   );

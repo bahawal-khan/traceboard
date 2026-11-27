@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { ProjectFrame } from "@/components/dashboard/project-frame";
+import { loadProjectNotices } from "@/lib/notices/load-notices";
 import { QUOTAS } from "@/lib/quotas";
 import { listApiKeys } from "@/lib/repo/api-keys";
 import { ctxFromSession } from "@/lib/repo/ctx";
@@ -16,9 +17,9 @@ export default async function ProjectKeysPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const ctx = await ctxFromSession();
   if (!ctx) redirect("/sign-in");
-  let project, keys;
+  let project, keys, notices;
   try {
-    [project, keys] = await Promise.all([getProject(ctx, id), listApiKeys(ctx, id)]);
+    [project, keys, notices] = await Promise.all([getProject(ctx, id), listApiKeys(ctx, id), loadProjectNotices(ctx, id)]);
   } catch (e) {
     // Not found, not yours, deleted or not a uuid: the same not-found page for all of them. Anything else (for example the
     // database being unreachable) is rethrown to the dashboard error boundary.
@@ -27,7 +28,7 @@ export default async function ProjectKeysPage({ params }: { params: Promise<{ id
   }
 
   return (
-    <ProjectFrame project={project}>
+    <ProjectFrame project={project} notices={notices}>
       <h2 className="text-xl font-semibold tracking-tight">API keys</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Use a key in the SDK or an OTLP exporter. Up to {QUOTAS.keysPerProject} active keys per project. A key is shown once, when you

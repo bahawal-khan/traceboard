@@ -35,6 +35,17 @@ const PROJECTS = [
 
 const FIXTURE_NOW = Date.UTC(2026, 10, 21, 12, 30, 0);
 
+// What `loadProjectNotices` would return, per view: quota near (1,650 of the limit), quota reached, conserve, both.
+const notice = (eventsToday: number, conserve: boolean) => ({ eventsToday, eventsLimit: QUOTAS.eventsPerDayPerProject, conserve });
+const NOTICES: Record<string, ReturnType<typeof notice>> = {
+  "overview-quota-near": notice(1_650, false),
+  "overview-quota-reached": notice(QUOTAS.eventsPerDayPerProject, false),
+  "overview-conserve": notice(12, true),
+  "overview-quota-and-conserve": notice(QUOTAS.eventsPerDayPerProject, true),
+  "traces-quota-near": notice(1_650, false),
+  "keys-quota-reached": notice(QUOTAS.eventsPerDayPerProject, false),
+};
+
 const TRACE_FIXTURES: TraceListItem[] = [
   { traceId: "9f2c41d8e0a74b6c8d3e5f7a1b2c3d4e", startedAtMs: FIXTURE_NOW - 40_000, durationMs: 4_820, spanCount: 7, errorCount: 0, totalTokens: 12_450, costMicro: 18_200, costLowerBound: false, unpricedEvents: 0, rootName: "agent.run", hasRoot: true },
   { traceId: "a1b2c3d4e5f60718293a4b5c6d7e8f90", startedAtMs: FIXTURE_NOW - 95_000, durationMs: 31_400, spanCount: 12, errorCount: 2, totalTokens: 48_900, costMicro: 91_500, costLowerBound: false, unpricedEvents: 0, rootName: "agent.run", hasRoot: true },
@@ -55,7 +66,7 @@ const KEYS = [
 
 /**
  * Development-only: renders the REAL Phase 1 components with fixture data, because the signed-in pages cannot be opened
- * headlessly without a session. `?view=projects|projects-empty|overview-quota-near|overview-quota-reached|keys|keys-empty|threads|threads-older|threads-partial|threads-empty|threads-7d-empty|threads-hostile|thread-<normal|partial-cost|truncated|untraced|no-traces|hostile|many>|live-<none|new|one|errors|truncated|long|paused|ended-session|ended-gone>|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
+ * headlessly without a session. `?view=projects|projects-empty|overview-quota-near|overview-quota-reached|overview-conserve|overview-quota-and-conserve|traces-quota-near|keys-quota-reached|keys|keys-empty|threads|threads-older|threads-partial|threads-empty|threads-7d-empty|threads-hostile|thread-<normal|partial-cost|truncated|untraced|no-traces|hostile|many>|live-<none|new|one|errors|truncated|long|paused|ended-session|ended-gone>|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
  * A production build answers 404.
  */
 export default async function PagesFixtures({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
@@ -76,14 +87,15 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
       );
     case "keys":
     case "keys-empty":
+    case "keys-quota-reached":
       return (
-        <ProjectFrame project={PROJECTS[0]}>
+        <ProjectFrame project={PROJECTS[0]} notices={NOTICES[view] ?? null}>
           <h2 className="text-xl font-semibold tracking-tight">API keys</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Use a key in the SDK or an OTLP exporter. Up to {QUOTAS.keysPerProject} active keys per project. A key is shown once, when you
             create it.
           </p>
-          <KeysPanel projectId={PROJECTS[0].id} initial={view === "keys" ? KEYS : []} limit={QUOTAS.keysPerProject} />
+          <KeysPanel projectId={PROJECTS[0].id} initial={view === "keys-empty" ? [] : KEYS} limit={QUOTAS.keysPerProject} />
         </ProjectFrame>
       );
     case "overview":
@@ -100,13 +112,15 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
         </ProjectFrame>
       );
     case "overview-quota-near":
-    case "overview-quota-reached": {
-      // The daily quota notice above real-looking numbers (unknown numbers show no banner: unit-tested, not a valid OverviewData).
-      const used = view === "overview-quota-near" ? 1_650 : QUOTAS.eventsPerDayPerProject;
+    case "overview-quota-reached":
+    case "overview-conserve":
+    case "overview-quota-and-conserve": {
+      // The project notices (frame-level, every tab) above real-looking numbers. Unknown status shows no banner: unit-tested.
+      const notices = NOTICES[view] ?? null;
       return (
-        <ProjectFrame project={PROJECTS[0]}>
+        <ProjectFrame project={PROJECTS[0]} notices={notices}>
           <OverviewView
-            data={{ ...getDemoOverview("24h"), quota: { eventsToday: used, eventsLimit: QUOTAS.eventsPerDayPerProject } }}
+            data={{ ...getDemoOverview("24h"), quota: { eventsToday: notices?.eventsToday ?? 0, eventsLimit: QUOTAS.eventsPerDayPerProject } }}
             basePath="/design/pages"
             keysHref="/design/pages?view=keys"
           />
@@ -136,10 +150,11 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
     case "traces-errors":
     case "traces-empty":
     case "traces-errors-empty":
-    case "traces-7d-empty": {
+    case "traces-7d-empty":
+    case "traces-quota-near": {
       const items = view === "traces-empty" || view === "traces-errors-empty" || view === "traces-7d-empty" ? [] : view === "traces-errors" ? TRACE_FIXTURES.filter((t) => t.errorCount > 0) : TRACE_FIXTURES;
       return (
-        <ProjectFrame project={PROJECTS[0]}>
+        <ProjectFrame project={PROJECTS[0]} notices={NOTICES[view] ?? null}>
           <TracesView
             items={items}
             range={view === "traces-7d-empty" ? "7d" : "24h"}

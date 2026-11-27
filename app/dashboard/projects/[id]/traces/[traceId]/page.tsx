@@ -4,6 +4,7 @@ import { ProjectFrame } from "@/components/dashboard/project-frame";
 import { TraceDetailPageView } from "@/components/dashboard/trace-detail-page-view";
 import { decodeRouteIdParam } from "@/lib/dashboard/route-id";
 import { buildTraceDetailView } from "@/lib/dashboard/trace-detail-view";
+import { loadProjectNotices } from "@/lib/notices/load-notices";
 import { ctxFromSession } from "@/lib/repo/ctx";
 import { isNotFoundLike } from "@/lib/repo/errors";
 import { getProject } from "@/lib/repo/projects";
@@ -27,9 +28,9 @@ export default async function TraceDetailPage({ params }: { params: Promise<{ id
   const ctx = await ctxFromSession();
   if (!ctx) redirect("/sign-in");
 
-  let project, detail;
+  let project, detail, notices;
   try {
-    [project, detail] = await Promise.all([getProject(ctx, id), getTrace(ctx, id, traceId)]);
+    [project, detail, notices] = await Promise.all([getProject(ctx, id), getTrace(ctx, id, traceId), loadProjectNotices(ctx, id)]);
   } catch (e) {
     if (isNotFoundLike(e)) notFound();
     throw e;
@@ -37,7 +38,7 @@ export default async function TraceDetailPage({ params }: { params: Promise<{ id
 
   const view = buildTraceDetailView({ traceId, spans: detail.spans, truncated: detail.truncated });
   return (
-    <ProjectFrame project={project}>
+    <ProjectFrame project={project} notices={notices}>
       <TraceDetailPageView view={view} backHref={`/dashboard/projects/${project.id}/traces`} />
     </ProjectFrame>
   );

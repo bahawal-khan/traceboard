@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { OverviewView } from "@/components/dashboard/overview-view";
 import { ProjectFrame } from "@/components/dashboard/project-frame";
+import { loadProjectNotices } from "@/lib/notices/load-notices";
 import { parseRangeParam } from "@/lib/dashboard/page-state";
 import { ctxFromSession } from "@/lib/repo/ctx";
 import { isNotFoundLike } from "@/lib/repo/errors";
@@ -29,11 +30,11 @@ export default async function ProjectOverviewPage({
   const ctx = await ctxFromSession();
   if (!ctx) redirect("/sign-in");
 
-  let project, data;
+  let project, data, notices;
   try {
     // Two independent reads in parallel. Each one proves the project is the caller's; either failing as "not found" ends in
     // the same page. A database outage is not "not found": it is rethrown to app/dashboard/error.tsx (retry, no details).
-    [project, data] = await Promise.all([getProject(ctx, id), readOverview(ctx, id, range)]);
+    [project, data, notices] = await Promise.all([getProject(ctx, id), readOverview(ctx, id, range), loadProjectNotices(ctx, id)]);
   } catch (e) {
     if (isNotFoundLike(e)) notFound();
     throw e;
@@ -41,7 +42,7 @@ export default async function ProjectOverviewPage({
 
   const base = `/dashboard/projects/${project.id}`;
   return (
-    <ProjectFrame project={project}>
+    <ProjectFrame project={project} notices={notices}>
       <OverviewView data={data} basePath={base} keysHref={`${base}/keys`} />
     </ProjectFrame>
   );

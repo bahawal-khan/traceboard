@@ -171,7 +171,7 @@ describe("navigation", () => {
     expect(src).toContain("href={`/dashboard/projects/${p.id}/keys`}");
   });
   it("every page wears the shared frame (heading, 'All projects' link, tabs)", () => {
-    for (const f of PAGES) expect(read(f), f).toContain("<ProjectFrame project={project}>");
+    for (const f of PAGES) expect(read(f), f).toContain("<ProjectFrame project={project} notices={notices}>");
     const frame = read("components/dashboard/project-frame.tsx");
     expect(frame).toContain('href="/dashboard"');
     expect(frame).toContain("<ProjectNav");
