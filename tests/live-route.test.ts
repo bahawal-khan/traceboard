@@ -39,6 +39,9 @@ const result = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The route logger writes one JSON line per request to console.log; keep the test output quiet. The logging test below
+  // replaces this with a collecting spy, so what is logged is still asserted. Restored by afterEach.
+  vi.spyOn(console, "log").mockImplementation(() => undefined);
   n += 1;
   // A fresh owner per test: the module's limiter is per user, and it must not carry state from one test into the next.
   ctx = { kind: "session", ownerId: `user_${n}`, projectIds: [PID], readOnly: false };

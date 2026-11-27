@@ -1,5 +1,6 @@
 import { StatusBadge } from "@/components/charts/status-badge";
 import { Card } from "@/components/ui/card";
+import { quotaLevel } from "@/lib/dashboard/quota-banner";
 import { formatInt } from "@/lib/format";
 
 /**
@@ -9,7 +10,8 @@ import { formatInt } from "@/lib/format";
 export function QuotaMeter({ used, limit }: { used: number; limit: number }) {
   const ratio = limit > 0 ? used / limit : 0;
   const pct = Math.min(100, Math.round(ratio * 100));
-  const status = ratio >= 1 ? ("critical" as const) : ratio >= 0.8 ? ("warning" as const) : ("good" as const);
+  const level = quotaLevel(used, limit); // same thresholds as the banner
+  const status = level === "reached" ? ("critical" as const) : level === "near" ? ("warning" as const) : ("good" as const);
   const label = status === "critical" ? "Quota reached: new events are refused until 00:00 UTC" : status === "warning" ? "Approaching today's quota" : "Within today's quota";
   const bar = status === "critical" ? "bg-status-critical" : status === "warning" ? "bg-status-warning" : "bg-chart-1";
 

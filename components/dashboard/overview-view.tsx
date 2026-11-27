@@ -5,6 +5,7 @@ import { StatTile } from "@/components/charts/stat-tile";
 import { StatusBadge } from "@/components/charts/status-badge";
 import { TimeSeriesChart } from "@/components/charts/time-series-chart";
 import { EmptyOverview } from "@/components/dashboard/empty-overview";
+import { QuotaBanner } from "@/components/dashboard/quota-banner";
 import { QuotaMeter } from "@/components/dashboard/quota-meter";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +66,8 @@ export function OverviewView({ data, basePath, keysHref }: { data: OverviewData;
   return (
     <div className="space-y-6">
       <OverviewHeader data={data} basePath={basePath} />
+
+      <QuotaBanner used={data.quota.eventsToday} limit={data.quota.eventsLimit} />
 
       {data.truncated ? (
         <Alert>

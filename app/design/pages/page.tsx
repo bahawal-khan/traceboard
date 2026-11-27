@@ -55,7 +55,7 @@ const KEYS = [
 
 /**
  * Development-only: renders the REAL Phase 1 components with fixture data, because the signed-in pages cannot be opened
- * headlessly without a session. `?view=projects|projects-empty|keys|keys-empty|threads|threads-older|threads-partial|threads-empty|threads-7d-empty|threads-hostile|thread-<normal|partial-cost|truncated|untraced|no-traces|hostile|many>|live-<none|new|one|errors|truncated|long|paused|ended-session|ended-gone>|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
+ * headlessly without a session. `?view=projects|projects-empty|overview-quota-near|overview-quota-reached|keys|keys-empty|threads|threads-older|threads-partial|threads-empty|threads-7d-empty|threads-hostile|thread-<normal|partial-cost|truncated|untraced|no-traces|hostile|many>|live-<none|new|one|errors|truncated|long|paused|ended-session|ended-gone>|capacity-full|capacity-paused|error|trace-<ok|failed|orphan|cycle|deep|unpriced|partial|instant|large>`.
  * A production build answers 404.
  */
 export default async function PagesFixtures({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
@@ -99,6 +99,20 @@ export default async function PagesFixtures({ searchParams }: { searchParams: Pr
           />
         </ProjectFrame>
       );
+    case "overview-quota-near":
+    case "overview-quota-reached": {
+      // The daily quota notice above real-looking numbers (unknown numbers show no banner: unit-tested, not a valid OverviewData).
+      const used = view === "overview-quota-near" ? 1_650 : QUOTAS.eventsPerDayPerProject;
+      return (
+        <ProjectFrame project={PROJECTS[0]}>
+          <OverviewView
+            data={{ ...getDemoOverview("24h"), quota: { eventsToday: used, eventsLimit: QUOTAS.eventsPerDayPerProject } }}
+            basePath="/design/pages"
+            keysHref="/design/pages?view=keys"
+          />
+        </ProjectFrame>
+      );
+    }
     case "overview-empty":
       return (
         <ProjectFrame project={PROJECTS[0]}>

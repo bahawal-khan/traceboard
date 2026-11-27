@@ -181,7 +181,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     flushed = mon.flush(10)
     stats = mon.stats
     print("agent runs: %(normal_runs)d normal, %(failing_runs)d with a failing tool, %(looping_runs)d looping" % done)
-    print("events tracked: %d, sent: %s, dropped: %d" % (stats.get("events_tracked", 0), stats.get("events_sent", "?"), stats.get("events_dropped_queue_full", 0)))
+    print("events tracked: %d, sent: %s, dropped: %d, rejected: %d" % (stats.get("events_tracked", 0), stats.get("events_sent", "?"), stats.get("events_dropped_queue_full", 0), stats.get("events_rejected", 0)))
     if args.dry_run and transport is not None:
         kinds: Dict[str, int] = {}
         for e in transport.events:
@@ -192,12 +192,15 @@ def main(argv: Optional[List[str]] = None) -> int:
                 for e in transport.events:
                     f.write(json.dumps(e, sort_keys=True) + "\n")
             print("wrote %s" % args.out)
+    elif flushed and not (stats.get("events_rejected", 0) or stats.get("events_failed", 0) or stats.get("events_dropped_queue_full", 0)):
+        print("done. The server accepted the events. Open your project in the dashboard: Overview and Traces show them within a few seconds.")
     elif flushed:
-        print("done. The events were accepted by the server; the trace view comes in a later release.")
+        print("done, but the server did not accept every event (see the counters above). Check the key, the URL and today's quota.")
     else:
         print("some events are still queued (the server is slow or unreachable); the SDK will keep retrying while this process lives.")
     mon.shutdown()
-    return 0 if (flushed or args.dry_run) else 1
+    clean = not (stats.get("events_rejected", 0) or stats.get("events_failed", 0))
+    return 0 if args.dry_run or (flushed and clean) else 1
 
 
 if __name__ == "__main__":

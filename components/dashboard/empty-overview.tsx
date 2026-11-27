@@ -11,10 +11,15 @@ const RANGE_TEXT: Record<OverviewRange | "14d", string> = { "24h": "the last 24 
 const ENV_SNIPPET = `export LLM_MONITOR_API_KEY=lm_...
 export LLM_MONITOR_URL=https://<your-deployment>`;
 
-const SDK_SNIPPET = `from llm_monitor import Monitor
+// `from openai import OpenAI` is the user's own existing line, but it is shown so the snippet runs as pasted (without it: NameError).
+const SDK_SNIPPET = `from openai import OpenAI                                          # you already have this
+from llm_monitor import Monitor
 from llm_monitor.integrations.openai import instrument_openai   # or .anthropic: instrument_anthropic
 
 client = instrument_openai(OpenAI(), Monitor())`;
+
+// Run from the repository root; needs no LLM key and prints nothing secret.
+const DEMO_SNIPPET = `python sdk/python/examples/demo.py`;
 
 const OTLP_SNIPPET = `export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://<your-deployment>/api/otlp/v1/traces
 export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer <your lm_ key>"`;
@@ -65,13 +70,19 @@ export function EmptyOverview({
           <li className="space-y-2">
             <p>
               Install the Python SDK from the repository (<code className="text-xs">pip install ./sdk/python</code>, not on PyPI yet) and set two
-              environment variables:
+              environment variables. Use the address of this site without any path; the SDK adds <code className="text-xs">/api/ingest</code>{" "}
+              itself.
             </p>
             <Code label="Environment variables">{ENV_SNIPPET}</Code>
           </li>
           <li className="space-y-2">
             <p>Add three lines around your provider client:</p>
             <Code label="Python SDK setup">{SDK_SNIPPET}</Code>
+          </li>
+          <li className="space-y-2">
+            <p>No LLM key at hand? Run the demo agent instead. It sends simulated traces and needs no provider account:</p>
+            <Code label="Demo command">{DEMO_SNIPPET}</Code>
+            <p className="text-sm text-muted-foreground">When the command has finished, reload this page: the first traces appear here.</p>
           </li>
         </ol>
 

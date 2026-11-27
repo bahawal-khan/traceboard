@@ -143,8 +143,40 @@ class TestCli(unittest.TestCase):
             self.assertEqual(code, 0, text)
             sent = [e for r in srv.requests for e in r["body"]["events"]]
             self.assertGreater(len(sent), 10)
-            self.assertIn("events were accepted", text)
-            self.assertNotIn("dashboard", text)
+            last = text.strip().splitlines()[-1]
+            # The last line must point at the dashboard that exists today, not at a feature "in a later release" (it once did).
+            self.assertIn("server accepted the events", last)
+            self.assertIn("dashboard", last)
+            self.assertNotIn("later release", text)
+            self.assertIn("rejected: 0", text)
+
+    def test_no_output_path_ever_prints_the_key(self):
+        from _helpers import IngestServer
+        outputs = [self.call(["--runs", "1"])[1], self.call(["--runs", "1", "--dry-run"])[1]]
+        with IngestServer() as srv:
+            outputs.append(self.call(["--runs", "1"], env={"LLM_MONITOR_API_KEY": API_KEY, "LLM_MONITOR_URL": srv.url})[1])
+        for text in outputs:
+            self.assertNotIn(API_KEY, text)
+            self.assertNotIn("lm_", text.replace("LLM_MONITOR", ""))
+
+    def test_the_last_line_does_not_claim_success_when_the_server_rejected_events(self):
+        class Rejecting(object):
+            def send(self, events):
+                from llm_monitor._transport import SendResult
+                return SendResult(True, 202, {"accepted": 0, "duplicates": 0, "rejected": [{"index": i, "reason": "bad"} for i in range(len(events))], "flush_hint_ms": 3000}, None, None)
+
+        out = io.StringIO()
+        old_main_monitor = demo.Monitor
+        demo.Monitor = lambda: old_main_monitor(API_KEY, "https://example.test", transport=Rejecting())
+        try:
+            with contextlib.redirect_stdout(out):
+                code = demo.main(["--runs", "1"])
+        finally:
+            demo.Monitor = old_main_monitor
+        text = out.getvalue()
+        self.assertEqual(code, 1)
+        self.assertNotIn("server accepted the events", text)
+        self.assertIn("did not accept every event", text.strip().splitlines()[-1])
 
 
 if __name__ == "__main__":
